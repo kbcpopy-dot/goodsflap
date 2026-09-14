@@ -159,6 +159,27 @@ async function updateOrder(id, status, paymentKey) {
   if (!useSupabase) { if (paymentKey) db.prepare('UPDATE orders SET status=?,paymentKey=? WHERE id=?').run(status, paymentKey, id); else db.prepare('UPDATE orders SET status=? WHERE id=?').run(status, id); return; }
   const values = {status}; if (paymentKey) values.payment_key = paymentKey; databaseError((await supabase.from('orders').update(values).eq('id', id)).error);
 }
+async function replaceOrderItems(id, sid, memberId, items) {
+  const row = await findOrder(id, sid, memberId);
+  if (!row) throw clientError('주문을 찾을 수 없습니다.', 404);
+  if (!['demo', 'pending'].includes(row.status)) throw clientError('결제가 완료되었거나 제작이 시작된 주문은 수정할 수 없습니다.', 409);
+  if (!Array.isArray(items) || items.length > 20) throw clientError('주문 항목을 확인해 주세요.');
+  if (!items.length) {
+    if (!useSupabase) db.prepare('DELETE FROM orders WHERE id=?').run(row.id);
+    else databaseError((await supabase.from('orders').delete().eq('id', row.id)).error);
+    return {deleted: true};
+  }
+  const catalog = await listCatalogProducts(true), clean = [];
+  for (const item of items) {
+    if (!item || typeof item.assetId !== 'string' || !await findAsset(item.assetId, sid, memberId)) throw clientError('주문에 사용한 이미지를 확인할 수 없습니다.', 404);
+    try { clean.push(validateItem({productId: item.productId, option: item.option, quantity: item.quantity, assetId: item.assetId, transform: item.transform}, catalog)); }
+    catch { throw clientError('상품 옵션, 수량 또는 디자인 배치를 확인해 주세요.'); }
+  }
+  const current = typeof row.body === 'string' ? JSON.parse(row.body) : row.body, body = {...current, items: clean, ...totals(clean)};
+  if (!useSupabase) db.prepare('UPDATE orders SET body=? WHERE id=?').run(JSON.stringify(body), row.id);
+  else databaseError((await supabase.from('orders').update({body}).eq('id', row.id)).error);
+  return {...unpack(row), ...body};
+}
 async function prepareOrderPayment(id, sid, memberId) {
   const row = await findOrder(id, sid, memberId);
   if (!row) throw clientError('결제 주문을 찾을 수 없습니다.', 404);
@@ -520,6 +541,7 @@ app.post('/api/orders/:id/payment', requireMember, async (req, res) => {
   if (!enabled) throw clientError('토스페이먼츠 결제 설정을 확인해 주세요.', 503);
   res.json(await prepareOrderPayment(req.params.id, req.sid, req.member.id));
 });
+app.patch('/api/orders/:id/items', requireMember, async (req, res) => res.json(await replaceOrderItems(req.params.id, req.sid, req.member.id, req.body.items)));
 app.get('/api/orders', requireMember, async (req, res) => res.json(await listOrders(req.sid, req.member.id)));
 app.post('/api/payments/confirm', requireMember, async (req, res) => {
   const {orderId, paymentKey, amount} = req.body, row = await findOrder(orderId, req.sid, req.member.id);

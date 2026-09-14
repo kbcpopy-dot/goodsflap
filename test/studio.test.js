@@ -34,7 +34,8 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   response=await request('/api/designs',{method:'POST',cookie:authCookie,body:{productId:'mug',option:'화이트 · 330ml',assetId:asset.id,transform:{x:.1,y:0,scale:.8,rotation:25}}});assert.equal(response.status,201);const savedDesign=(await response.json()).design;assert.equal(savedDesign.assetId,asset.id);assert.equal(savedDesign.name,'AI Creator 머그컵');
   response=await request('/api/designs',{cookie:authCookie});assert.equal(response.status,200);assert.equal((await response.json()).length,1);assert.equal((await request('/api/designs',{cookie:anonCookie})).status,401);
   const item={productId:'mug',option:'화이트 · 330ml',quantity:2,assetId:asset.id,transform:{x:.1,y:0,scale:.8,rotation:25},unitPrice:1};
-  response=await request('/api/orders',{method:'POST',cookie:authCookie,body:{items:[item],recipient:{name:'테스트',phone:'01000000000',address:'테스트용 주소'},consent:true,mode:'demo'}});assert.equal(response.status,200);const order=await response.json();assert.equal(order.amount,33000);
+  response=await request('/api/orders',{method:'POST',cookie:authCookie,body:{items:[item],recipient:{name:'테스트',phone:'01000000000',address:'테스트용 주소'},consent:true,mode:'demo'}});assert.equal(response.status,200);let order=await response.json();assert.equal(order.amount,33000);
+  response=await request('/api/orders/'+order.id+'/items',{method:'PATCH',cookie:authCookie,body:{items:[{...item,quantity:3}]}});assert.equal(response.status,200);order=await response.json();assert.equal(order.amount,48000);assert.equal(order.items[0].quantity,3);
   response=await request('/api/orders',{cookie:authCookie});assert.equal(response.status,200);assert.equal((await response.json()).length,1);assert.equal((await request('/api/orders',{cookie:anonCookie})).status,401);
   assert.equal((await request('/api/admin/orders',{cookie:authCookie})).status,403);
   assert.equal((await request('/api/admin/catalog-media',{method:'POST',cookie:authCookie,body:{data:'data:image/png;base64,'+image.toString('base64')}})).status,403);
@@ -51,6 +52,9 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   response=await request(`/api/admin/orders/${order.id}/files/0/original`,{cookie:authCookie});assert.deepEqual(Buffer.from(await response.arrayBuffer()),image);
   response=await request('/api/admin/orders/'+order.id,{method:'PATCH',cookie:authCookie,body:{status:'paid'}});assert.equal(response.status,400);
   response=await request('/api/admin/orders/'+order.id,{method:'PATCH',cookie:authCookie,body:{status:'production'}});assert.equal(response.status,200);
+  response=await request('/api/orders/'+order.id+'/items',{method:'PATCH',cookie:authCookie,body:{items:[item]}});assert.equal(response.status,409);
+  response=await request('/api/orders',{method:'POST',cookie:authCookie,body:{items:[{...item,quantity:1}],recipient:{name:'테스트',phone:'01000000000',address:'테스트용 주소'},consent:true,mode:'demo'}});assert.equal(response.status,200);const deletableOrder=await response.json();
+  response=await request('/api/orders/'+deletableOrder.id+'/items',{method:'PATCH',cookie:authCookie,body:{items:[]}});assert.equal(response.status,200);assert.equal((await response.json()).deleted,true);
   response=await request('/api/orders',{method:'POST',cookie:authCookie,body:{items:[{...item,quantity:0}],recipient:{name:'테스트',phone:'01000000000',address:'테스트용 주소'},consent:true,mode:'demo'}});assert.equal(response.status,400);
   response=await request('/api/auth/logout',{method:'POST',cookie:authCookie,body:{}});assert.equal(response.status,200);
   response=await request('/api/auth/signup',{method:'POST',cookie:anonCookie,body:{name:'다른 회원',email:'other@example.com',phone:'01011112222',password:'safe-password-456'}});assert.equal(response.status,201);
