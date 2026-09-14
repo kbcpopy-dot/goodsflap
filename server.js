@@ -24,9 +24,12 @@ const storageError=error=>{if(error)throw Error('파일 저장소 처리 중 오
 const databaseError=error=>{if(error)throw Error('주문 데이터 처리 중 오류가 발생했습니다.');};
 async function insertAsset(asset,original,normalized){
  if(!useSupabase){writeFileSync(path.join(data,asset.id+'.original'),original);writeFileSync(path.join(data,asset.id+'.png'),normalized);db.prepare('INSERT INTO assets VALUES(?,?,?,?,?)').run(asset.id,asset.session,asset.format,asset.width,asset.height);return;}
- storageError((await supabase.storage.from('customer-originals').upload(`${asset.id}.${asset.format}`,original,{contentType:`image/${asset.format}`,upsert:false})).error);
- storageError((await supabase.storage.from('design-previews').upload(`${asset.id}.png`,normalized,{contentType:'image/png',upsert:false})).error);
- databaseError((await supabase.from('assets').insert({id:asset.id,session_hash:asset.session,format:asset.format,width:asset.width,height:asset.height,original_path:`${asset.id}.${asset.format}`,normalized_path:`${asset.id}.png`})).error);
+ const originalPath=`${asset.id}.${asset.format}`,previewPath=`${asset.id}.png`;
+ storageError((await supabase.storage.from('customer-originals').upload(originalPath,original,{contentType:`image/${asset.format}`,upsert:false})).error);
+ const previewUpload=await supabase.storage.from('design-previews').upload(previewPath,normalized,{contentType:'image/png',upsert:false});
+ if(previewUpload.error){await supabase.storage.from('customer-originals').remove([originalPath]);storageError(previewUpload.error);}
+ const insert=await supabase.from('assets').insert({id:asset.id,session_hash:asset.session,format:asset.format,width:asset.width,height:asset.height,original_path:originalPath,normalized_path:previewPath});
+ if(insert.error){await Promise.all([supabase.storage.from('customer-originals').remove([originalPath]),supabase.storage.from('design-previews').remove([previewPath])]);databaseError(insert.error);}
 }
 async function findAsset(id,sid){if(!useSupabase)return db.prepare('SELECT * FROM assets WHERE id=? AND session=?').get(id,sid);const {data:row,error}=await supabase.from('assets').select('*').eq('id',id).eq('session_hash',sid).maybeSingle();databaseError(error);return row;}
 async function findAnyAsset(id){if(!useSupabase)return db.prepare('SELECT * FROM assets WHERE id=?').get(id);const {data:row,error}=await supabase.from('assets').select('*').eq('id',id).maybeSingle();databaseError(error);return row;}
