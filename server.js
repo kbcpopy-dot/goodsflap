@@ -775,6 +775,7 @@ app.get('/api/admin/orders/:id/files/:index/:kind', requireAdmin, async (req, re
   const png = await sharp(Buffer.from(svg)).png().withMetadata({density: 300}).toBuffer(); res.attachment(`${row.id}-${req.params.index}-300dpi-REVIEW.png`).send(png);
 });
 
+app.get(['/share', '/share/'], (_, res) => res.sendFile(path.join(root, 'public', 'index.html')));
 app.use(express.static(path.join(root, 'public')));
 app.use((error, req, res, next) => {
   const status = Number.isInteger(error.status) ? error.status : 400;

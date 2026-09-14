@@ -22,6 +22,7 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   const cookieFrom=(response,name)=>{const values=response.headers.getSetCookie?.()||[response.headers.get('set-cookie')];const value=values.find(item=>item?.startsWith(name+'='));return value?.split(';')[0];};
   const request=(url,{method='GET',body,cookie,headers={}}={})=>fetch(base+url,{method,headers:{...(body?{'Content-Type':'application/json'}:{}),...(cookie?{Cookie:cookie}:{}),...headers},...(body?{body:JSON.stringify(body)}:{})});
   const initial=await request('/api/catalog');const anonCookie=cookieFrom(initial,'artell_session');assert.ok(anonCookie);
+  const sharePage=await request('/share');assert.equal(sharePage.status,200);assert.match(await sharePage.text(),/property="og:image" content="https:\/\/www\.artell\.co\.kr\/media\/goodsflap-brand\.png"/);
   const catalog=await initial.json();assert.equal(catalog.products.length,13);
   for(const id of ['postcard','sticker','tumbler','cushion','glow-light','colorwave-light','humidifier','diffuser'])assert.ok(catalog.products.some(product=>product.id===id),`${id} 상품이 카탈로그에 있어야 합니다.`);
   const image=await sharp({create:{width:600,height:500,channels:4,background:'#c68d65'}}).png().toBuffer();
