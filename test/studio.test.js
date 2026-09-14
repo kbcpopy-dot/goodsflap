@@ -15,9 +15,9 @@ test('서버가 상품 가격을 확정하고 잘못된 옵션과 변환을 거�
 });
 
 test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주문·상품을 관리한다',async()=>{
- const child=spawn(process.execPath,['server.js'],{cwd:new URL('..',import.meta.url),env:{...process.env,DATA_DIR:mkdtempSync(join(tmpdir(),'goodsflap-member-test-')),PORT:'3017',PUBLIC_URL:'http://localhost:3017',ADMIN_TOKEN:'test-admin-only',TOSS_CLIENT_KEY:'',TOSS_SECRET_KEY:''},stdio:['ignore','pipe','pipe']});
+ const child=spawn(process.execPath,['server.js'],{cwd:new URL('..',import.meta.url),env:{...process.env,DATA_DIR:mkdtempSync(join(tmpdir(),'goodsflap-member-test-')),PORT:'3017',PUBLIC_URL:'https://artell.co.kr',ADMIN_TOKEN:'test-admin-only',TOSS_CLIENT_KEY:'',TOSS_SECRET_KEY:''},stdio:['ignore','pipe','pipe']});
  try{
-  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('서버 시작 시간 초과')),15000);child.stdout.on('data',chunk=>{if(chunk.toString().includes('http://localhost:3017')){clearTimeout(timer);resolve();}});child.on('error',reject);});
+  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('서버 시작 시간 초과')),15000);child.stdout.on('data',chunk=>{if(chunk.toString().includes('굿즈플랩 스튜디오:')){clearTimeout(timer);resolve();}});child.on('error',reject);});
   const base='http://localhost:3017';
   const cookieFrom=(response,name)=>{const values=response.headers.getSetCookie?.()||[response.headers.get('set-cookie')];const value=values.find(item=>item?.startsWith(name+'='));return value?.split(';')[0];};
   const request=(url,{method='GET',body,cookie,headers={}}={})=>fetch(base+url,{method,headers:{...(body?{'Content-Type':'application/json'}:{}),...(cookie?{Cookie:cookie}:{}),...headers},...(body?{body:JSON.stringify(body)}:{})});
@@ -56,7 +56,8 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   assert.equal((await request('/api/admin/bootstrap',{method:'POST',cookie:otherAuthCookie,headers:{'X-Admin-Token':'test-admin-only'},body:{}})).status,403);
   assert.equal((await request('/api/assets/'+asset.id,{cookie:otherAuthCookie})).status,404);
   response=await request('/api/orders',{method:'POST',cookie:otherAuthCookie,body:{items:[item],recipient:{name:'다른 회원',phone:'01011112222',address:'테스트용 주소'},consent:true,mode:'demo'}});assert.equal(response.status,400);
-  response=await request('/api/auth/login',{method:'POST',body:{email:'member@example.com',password:'safe-password-123'}});assert.equal(response.status,200);
+  response=await request('/api/auth/login',{method:'POST',headers:{Origin:'https://untrusted.example'},body:{}});assert.equal(response.status,403);
+  response=await request('/api/auth/login',{method:'POST',headers:{Origin:'https://www.artell.co.kr'},body:{email:'member@example.com',password:'safe-password-123'}});assert.equal(response.status,200);
   const renewedMemberCookie=cookieFrom(response,'goodsflap_member');
   assert.equal((await request('/api/assets/'+asset.id,{cookie:renewedMemberCookie})).status,200);
  }finally{child.kill();}

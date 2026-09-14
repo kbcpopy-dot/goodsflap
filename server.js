@@ -368,6 +368,14 @@ const app = express();
 if (process.env.VERCEL) app.set('trust proxy', 1);
 app.disable('x-powered-by');
 const origin = process.env.PUBLIC_URL || 'http://localhost:4310';
+const allowedRequestOrigins = new Set([origin.replace(/\/$/, '')]);
+try {
+  const configuredUrl = new URL(origin);
+  if (configuredUrl.hostname === 'artell.co.kr' || configuredUrl.hostname === 'www.artell.co.kr') {
+    allowedRequestOrigins.add(`${configuredUrl.protocol}//artell.co.kr`);
+    allowedRequestOrigins.add(`${configuredUrl.protocol}//www.artell.co.kr`);
+  }
+} catch {}
 const configuredAdminToken = process.env.ADMIN_TOKEN || '';
 if (process.env.NODE_ENV === 'production' && !configuredAdminToken) throw new Error('ADMIN_TOKEN is required in production.');
 const legacyAdminToken = configuredAdminToken || randomBytes(24).toString('hex');
@@ -376,9 +384,8 @@ const enabled = Boolean(process.env.TOSS_CLIENT_KEY && process.env.TOSS_SECRET_K
 app.use(async (req, res, next) => {
   try {
     res.set('X-Content-Type-Options', 'nosniff'); res.set('Referrer-Policy', 'same-origin'); res.set('Cache-Control', 'no-store');
-    const requestOrigin = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers.host}`;
-    const allowedOrigin = (process.env.PUBLIC_URL || requestOrigin).replace(/\/$/, '');
-    if (req.method !== 'GET' && req.headers.origin && req.headers.origin.replace(/\/$/, '') !== allowedOrigin) return res.status(403).json({error: '허용되지 않은 요청 출처입니다.'});
+    const requestOrigin = typeof req.headers.origin === 'string' ? req.headers.origin.replace(/\/$/, '') : '';
+    if (req.method !== 'GET' && requestOrigin && !allowedRequestOrigins.has(requestOrigin)) return res.status(403).json({error: '허용되지 않은 요청 출처입니다.'});
     const secure = (req.headers['x-forwarded-proto'] || req.protocol) === 'https';
     let sid = parseCookie(req, 'artell_session', '[a-f0-9]{64}');
     if (!sid) { sid = randomBytes(32).toString('hex'); res.cookie('artell_session', sid, {httpOnly: true, sameSite: 'lax', secure, maxAge: 30 * 86400000, path: '/'}); }
