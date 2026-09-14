@@ -2,7 +2,7 @@ import express from 'express';
 import {DatabaseSync} from 'node:sqlite';
 import {createHash, randomBytes, randomUUID, scrypt, timingSafeEqual} from 'node:crypto';
 import {promisify} from 'node:util';
-import {mkdirSync, writeFileSync, readFileSync} from 'node:fs';
+import {mkdirSync, writeFileSync, readFileSync, existsSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import sharp from 'sharp';
@@ -108,6 +108,20 @@ async function readAsset(asset, kind) {
   const bucket = kind === 'original' ? 'customer-originals' : 'design-previews';
   const object = kind === 'original' ? asset.original_path : asset.normalized_path;
   const {data: file, error} = await supabase.storage.from(bucket).download(object); storageError(error); return Buffer.from(await file.arrayBuffer());
+}
+const catalogMediaIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const catalogMediaUrlPattern = /^\/api\/catalog-media\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const staticCatalogMediaPattern = /^\/media\/[a-z0-9][a-z0-9._-]*\.(?:png|jpe?g|webp)$/i;
+async function saveCatalogMedia(id, image) {
+  if (!useSupabase) { const directory = path.join(data, 'catalog-media'); mkdirSync(directory, {recursive: true}); writeFileSync(path.join(directory, id + '.png'), image); return; }
+  storageError((await supabase.storage.from('catalog-media').upload(id + '.png', image, {contentType: 'image/png', upsert: false})).error);
+}
+async function readCatalogMedia(id) {
+  if (!catalogMediaIdPattern.test(id)) return null;
+  if (!useSupabase) { const file = path.join(data, 'catalog-media', id + '.png'); return existsSync(file) ? readFileSync(file) : null; }
+  const {data: file, error} = await supabase.storage.from('catalog-media').download(id + '.png');
+  if (error?.statusCode === 404 || error?.statusCode === '404') return null;
+  storageError(error); return Buffer.from(await file.arrayBuffer());
 }
 async function insertOrder(row) {
   if (!useSupabase) { db.prepare('INSERT INTO orders(id,session,memberId,body,status,paymentKey,createdAt) VALUES(?,?,?,?,?,?,?)').run(row.id, row.session, row.memberId || null, JSON.stringify(row.body), row.status, null, row.createdAt); return; }
@@ -274,6 +288,22 @@ async function countAdmins() {
 
 const productCategories = new Set(['paper', 'keyring', 'table', 'wearable', 'frame', 'light', 'other']);
 const defaultCategories = {postcard:'paper', sticker:'paper', keyring:'keyring', mug:'table', tee:'wearable', bag:'wearable', frame:'frame', cushion:'frame', 'glow-light':'light', 'colorwave-light':'light', humidifier:'light', diffuser:'light'};
+function productMediaField(value, label, fallback = '') {
+  const url = typeof value === 'string' ? value.trim() : fallback;
+  if (!url) return '';
+  if (!catalogMediaUrlPattern.test(url) && !staticCatalogMediaPattern.test(url)) throw clientError(`${label} 경로를 확인해 주세요.`);
+  return url;
+}
+function productDesignArea(input, current = {}) {
+  const keys = ['designX', 'designY', 'designWidth', 'designHeight'];
+  const hasFields = keys.some(key => Object.hasOwn(input, key));
+  const source = hasFields ? keys.map(key => input[key]) : (Array.isArray(input.designArea) ? input.designArea : current.designArea);
+  if (!source) return undefined;
+  if (!Array.isArray(source) || source.length !== 4 || source.some(value => !Number.isFinite(Number(value)))) throw clientError('디자인 영역 값을 확인해 주세요.');
+  const [x, y, width, height] = source.map(value => Math.round(Number(value)));
+  if (x < 0 || y < 0 || width < 10 || height < 10 || x + width > 500 || y + height > 500) throw clientError('디자인 영역은 제작 화면 안에 배치해 주세요.');
+  return [x, y, width, height];
+}
 function decodeProduct(row) {
   const body = typeof row.body === 'string' ? JSON.parse(row.body) : row.body;
   return {...body, id: row.id, visible: row.visible ?? true, sortOrder: row.sortOrder ?? row.sort_order ?? 0};
@@ -305,12 +335,16 @@ function productInput(input, current = {}, create = false) {
   const color = typeof input.color === 'string' && /^#[0-9a-f]{6}$/i.test(input.color) ? input.color : (current.color || '#e8ded5');
   const category = typeof input.category === 'string' ? input.category : (current.category || 'other');
   if (!productCategories.has(category)) throw clientError('상품 카테고리를 확인해 주세요.');
+  const thumbnailImage = productMediaField(input.thumbnailImage, '카드 이미지', current.thumbnailImage || current.image || '');
+  const detailImage = productMediaField(input.detailImage, '상품정보 이미지', current.detailImage || current.thumbnailImage || current.image || '');
+  const studioImage = productMediaField(input.studioImage, '디자인 목업 이미지', current.studioImage || '');
+  const designArea = productDesignArea(input, current);
   const visible = input.visible !== false;
   const sortOrder = Number.isInteger(Number(input.sortOrder)) ? Math.max(0, Math.min(9999, Number(input.sortOrder))) : (Number.isInteger(current.sortOrder) ? current.sortOrder : 0);
-  return {id, name, tag, price, options, mm, color, category, visible, sortOrder};
+  return {id, name, tag, price, options, mm, color, category, thumbnailImage, detailImage, studioImage, designArea, visible, sortOrder};
 }
 async function saveCatalogProduct(product) {
-  const now = isoNow(), body = {id: product.id, name: product.name, tag: product.tag, price: product.price, options: product.options, mm: product.mm, color: product.color, category: product.category};
+  const now = isoNow(), body = {id: product.id, name: product.name, tag: product.tag, price: product.price, options: product.options, mm: product.mm, color: product.color, category: product.category, thumbnailImage: product.thumbnailImage, detailImage: product.detailImage, studioImage: product.studioImage, designArea: product.designArea};
   if (!useSupabase) db.prepare('INSERT INTO catalog_products(id,body,visible,sortOrder,createdAt,updatedAt) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body,visible=excluded.visible,sortOrder=excluded.sortOrder,updatedAt=excluded.updatedAt').run(product.id, JSON.stringify(body), product.visible ? 1 : 0, product.sortOrder, now, now);
   else databaseError((await supabase.from('catalog_products').upsert({id: product.id, body, visible: product.visible, sort_order: product.sortOrder, updated_at: now}, {onConflict: 'id'})).error);
   return (await listCatalogProducts(true)).find(item => item.id === product.id);
@@ -431,6 +465,9 @@ app.post('/api/assets', requireMember, async (req, res) => {
 app.get('/api/assets/:id', requireMember, async (req, res) => {
   const asset = await findAsset(req.params.id, req.sid, req.member.id); if (!asset) return res.sendStatus(404); res.type('png').send(await readAsset(asset, 'normalized'));
 });
+app.get('/api/catalog-media/:id', async (req, res) => {
+  const image = await readCatalogMedia(req.params.id); if (!image) return res.sendStatus(404); res.type('png').send(image);
+});
 app.post('/api/orders', requireMember, async (req, res) => {
   const {items, recipient, mode} = req.body;
   if (!Array.isArray(items) || items.length < 1 || items.length > 20) throw clientError('장바구니는 1~20개 디자인을 담을 수 있습니다.');
@@ -482,6 +519,15 @@ app.patch('/api/admin/members/:id', requireAdmin, async (req, res) => {
   res.json({member: publicMember(member)});
 });
 app.get('/api/admin/products', requireAdmin, async (_, res) => res.json(await listCatalogProducts(true)));
+app.post('/api/admin/catalog-media', requireAdmin, async (req, res) => {
+  const match = req.body.data?.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/);
+  if (!match) throw clientError('PNG, JPG, WebP 이미지를 선택해 주세요.');
+  const bytes = Buffer.from(match[2], 'base64'); if (bytes.length > 10 * 1024 * 1024) throw clientError('이미지는 10MB 이하여야 합니다.');
+  const meta = await sharp(bytes, {limitInputPixels: 40000000}).metadata();
+  if (!['png', 'jpeg', 'webp'].includes(meta.format) || meta.pages > 1) throw clientError('정지 이미지만 사용할 수 있습니다.');
+  const id = randomUUID(), normalized = await sharp(bytes).rotate().png().toBuffer({resolveWithObject: true});
+  await saveCatalogMedia(id, normalized.data); res.status(201).json({id, url: '/api/catalog-media/' + id, width: normalized.info.width, height: normalized.info.height});
+});
 app.post('/api/admin/products', requireAdmin, async (req, res) => {
   const all = await listCatalogProducts(true), product = productInput(req.body, {}, true);
   if (all.some(item => item.id === product.id)) throw clientError('이미 사용 중인 상품 코드입니다.');
