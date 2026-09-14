@@ -157,3 +157,35 @@ input[type=email],textarea{font-family:inherit}input[type=email]{width:100%;padd
 /* Visual print-area calibration uses physical millimetres and a draggable mockup overlay. */
 .design-area-editor-shell{overflow:hidden;margin-top:10px;border:1px solid #cfc9bf;border-radius:12px;background:linear-gradient(45deg,#f2f0eb 25%,transparent 25%,transparent 75%,#f2f0eb 75%),linear-gradient(45deg,#f2f0eb 25%,#fff 25%,#fff 75%,#f2f0eb 75%);background-position:0 0,8px 8px;background-size:16px 16px}.design-area-editor-shell canvas{display:block;width:100%;aspect-ratio:1;touch-action:none}.design-area-readout{display:flex;justify-content:space-between;gap:10px;margin-top:10px;font-size:10px}.design-area-readout b{color:var(--ink)}.design-area-readout span{color:var(--muted)}.design-area-toolbar{display:grid;grid-template-columns:repeat(8,1fr);gap:5px;margin-top:9px}.design-area-toolbar button{min-height:34px;padding:5px 2px;border:1px solid #cfc9bf;border-radius:8px;background:#f7f5ef;font-size:10px;font-weight:900;cursor:pointer}.design-area-toolbar button:hover{border-color:var(--ink);background:var(--ink);color:white}
 @media(max-width:600px){.design-area-readout{align-items:flex-start;flex-direction:column}.design-area-toolbar{grid-template-columns:repeat(4,1fr)}}
+
+/* Supporting copy stays readable on notebook and compact screens. */
+.brand-copy small{font-size:12px}
+.hero-collection-label small{font-size:16px}
+.pillar b{font-size:16px}.pillar p{font-size:19px}
+.section-head p{max-width:430px;font-size:19px}
+.catalog-strip p{font-size:18px}.catalog-chips span{font-size:15px}
+.source-shop .product-info>span{font-size:15px}.source-shop .product-info p{min-height:60px;font-size:18px}.source-shop .product-option{font-size:15px}.source-shop .product-info strong small{font-size:14px}
+.making-story>span{font-size:15px}.making-story p{font-size:21px}.making-list p{font-size:18px}
+.global-inner p{max-width:820px;font-size:19px}
+.footer-business p{font-size:15px}
+.breadcrumb{font-size:16px}.quick-view-tag{font-size:19px}.quick-view-meta dt{font-size:14px}.quick-view-meta dd{font-size:16px}
+.studio-panel .sub{font-size:18px}.studio-panel>strong small,.upload small{font-size:15px}.hint{font-size:16px}
+.auth-card>p,.account-heading p,.admin-heading p,.admin-panel-head p,.my-page-heading>p{font-size:19px}.password-rules,.password-rules b,.password-rules small{font-size:15px}
+.admin-stat-grid span,.admin-stat-grid small,.saved-design-card p,.my-order-row p,.order-item-row p{font-size:16px}.my-page-section-head p{font-size:16px}
+.member-row p{font-size:18px}.member-row small,.member-controls label{font-size:15px}.catalog-media-head p{font-size:15px}.catalog-media-preview{font-size:16px}.catalog-media-actions small{font-size:14px}
+.admin-product-card p,.admin-product-card small{font-size:16px}.category-manager-head p,.category-manager .error{font-size:15px}.design-area-fields legend small{font-size:14px}.design-area-readout{font-size:15px}
+
+@media(max-width:600px){
+  .brand-copy small{font-size:11px;letter-spacing:1.1px}
+  .hero-collection-label small{font-size:15px}
+  .pillar b{font-size:14px}.pillar p{font-size:15px}
+  .section-head p{font-size:16px}
+  .catalog-strip p{font-size:16px}.catalog-chips span{font-size:13px}
+  .source-shop .product-info>span{font-size:12px}.source-shop .product-info p{min-height:0;font-size:15px}.source-shop .product-option{font-size:12px}.source-shop .product-info strong small{font-size:13px}
+  .making-story>span{font-size:14px}.making-story p{font-size:18px}.making-list p{font-size:16px}
+  .global-inner p{font-size:18px}
+  .footer-business p{font-size:14px}
+  .breadcrumb{font-size:14px}.quick-view-tag{font-size:17px}.quick-view-meta dt{font-size:13px}.quick-view-meta dd{font-size:15px}
+  .studio-panel .sub{font-size:17px}.studio-panel>strong small,.upload small{font-size:14px}.hint{font-size:15px}
+  .auth-card>p,.account-heading p,.admin-heading p,.admin-panel-head p,.my-page-heading>p{font-size:17px}
+}
