@@ -5,7 +5,7 @@ export const products = [
  {id:'mug',name:'AI Creator 머그컵',tag:'매일의 첫 장면에 창작의 온기를 더하는 컵',price:15000,options:['화이트 · 330ml','화이트 · 450ml'],mm:[90,80],color:'#e8e9df'},
  {id:'tee',name:'Creator 그래픽 티셔츠',tag:'학생 작품을 입고 다니는 가장 솔직한 컬렉션',price:29000,options:['화이트 · S','화이트 · M'],mm:[210,260],color:'#e8ded5'},
  {id:'bag',name:'아트 에코백',tag:'가볍게 들고 오래 쓰는 캠퍼스 아트백',price:12000,options:['One size · 36 × 39cm'],mm:[200,240],color:'#e8dfcc'},
- {id:'frame',name:'컬러 포토프레임',tag:'작품과 사진을 함께 놓는 책상 위 갤러리',price:18000,options:['4 × 6 inch','5 × 7 inch'],mm:[102,152],color:'#dedfcf'},
+ {id:'frame',name:'컬러 포토프레임',tag:'작품과 사진을 함께 놓는 책상 위 갤러리',price:18000,options:['5 x 7 inch'],mm:[178,127],color:'#dedfcf',image:'/media/color-photo-frame-product.png',studioImage:'/media/color-photo-frame-acrylic.png'},
  {id:'cushion',name:'클라우드 쿠션',tag:'작품 속 구름을 포근한 쉼으로 만든 쿠션',price:24000,options:['40 × 40cm','50 × 50cm'],mm:[400,400],color:'#d9c8ff'},
  {id:'glow-light',name:'글로우 무드등',tag:'학생 일러스트가 밤을 여는 은은한 무드 조명',price:34000,options:['Mini','Standard'],mm:[100,150],color:'#fff0a9'},
  {id:'colorwave-light',name:'컬러웨이브 라이트',tag:'작품의 색을 그대로 옮긴 24색 무드 라이트',price:38000,options:['24 colors'],mm:[100,160],color:'#bfe7fb'},
