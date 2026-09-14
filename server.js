@@ -13,7 +13,7 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const useSupabase = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 const useSupabaseAuth = useSupabase && Boolean(publishableKey);
-const data = process.env.DATA_DIR || path.join(root, 'data');
+const data = process.env.DATA_DIR || (process.env.VERCEL ? path.join('/tmp', 'goodsflap-data') : path.join(root, 'data'));
 const supabase = useSupabase ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {auth: {persistSession: false, autoRefreshToken: false, detectSessionInUrl: false}}) : null;
 const createAuthClient = () => useSupabaseAuth ? createClient(process.env.SUPABASE_URL, publishableKey, {auth: {persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, flowType: 'implicit'}}) : null;
 const scryptAsync = promisify(scrypt);
