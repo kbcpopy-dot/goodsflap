@@ -3,6 +3,7 @@ export const products = [
  {id:'sticker',name:'굿즈플랩 스티커',tag:'노트와 폰을 작품처럼 바꾸는 컬러 스티커',price:4000,options:['90 × 150mm'],mm:[90,150],color:'#cbe7fb'},
  {id:'keyring',name:'크리스털 아크릴 키링',tag:'빛과 함께 움직이는 학생 작가의 작은 상징',price:8000,options:['55mm'],mm:[55,55],color:'#d8caff'},
  {id:'mug',name:'AI Creator 머그컵',tag:'매일의 첫 장면에 창작의 온기를 더하는 컵',price:15000,options:['화이트 · 330ml','화이트 · 450ml'],mm:[90,80],color:'#e8e9df'},
+ {id:'tumbler',name:'미니 우드 텀블러',tag:'작은 응원과 메시지를 담아 매일 들고 다니는 텀블러',price:18000,options:['화이트','아이보리'],mm:[70,80],color:'#f4e6d2',category:'table',thumbnailImage:'/media/텀블러1.png',detailImage:'/media/텀블러1.png',studioImage:'/media/텀블러2.png',designArea:[96,230,126,144]},
  {id:'tee',name:'Creator 그래픽 티셔츠',tag:'학생 작품을 입고 다니는 가장 솔직한 컬렉션',price:29000,options:['화이트 · S','화이트 · M'],mm:[210,260],color:'#e8ded5'},
  {id:'bag',name:'아트 에코백',tag:'가볍게 들고 오래 쓰는 캠퍼스 아트백',price:12000,options:['One size · 36 × 39cm'],mm:[200,240],color:'#e8dfcc'},
  {id:'frame',name:'컬러 포토프레임',tag:'작품과 사진을 함께 놓는 책상 위 갤러리',price:18000,options:['5 x 7 inch'],mm:[178,127],color:'#dedfcf',thumbnailImage:'/media/color-photo-frame-product.png',detailImage:'/media/color-photo-frame-product.png',studioImage:'/media/color-photo-frame-acrylic.png'},

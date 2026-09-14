@@ -42,7 +42,7 @@ test('Supabase가 일시적으로 502를 반환해도 공개 상품 목록을 �
     const response = await fetch(`http://127.0.0.1:${appPort}/api/catalog`);
     const catalog = await response.json();
     assert.equal(response.status, 200);
-    assert.equal(catalog.products.length, 12);
+    assert.equal(catalog.products.length, 13);
     assert.equal(attempts, 3);
   } finally {
     child.kill();

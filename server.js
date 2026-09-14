@@ -361,7 +361,7 @@ async function countAdmins() {
 }
 
 const productCategories = new Set(['paper', 'keyring', 'table', 'wearable', 'frame', 'light', 'other']);
-const defaultCategories = {postcard:'paper', sticker:'paper', keyring:'keyring', mug:'table', tee:'wearable', bag:'wearable', frame:'frame', cushion:'frame', 'glow-light':'light', 'colorwave-light':'light', humidifier:'light', diffuser:'light'};
+const defaultCategories = {postcard:'paper', sticker:'paper', keyring:'keyring', mug:'table', tumbler:'table', tee:'wearable', bag:'wearable', frame:'frame', cushion:'frame', 'glow-light':'light', 'colorwave-light':'light', humidifier:'light', diffuser:'light'};
 function productMediaField(value, label, fallback = '') {
   const url = typeof value === 'string' ? value.trim() : fallback;
   if (!url) return '';
