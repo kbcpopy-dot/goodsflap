@@ -39,8 +39,13 @@ const normalizeEmail = value => {
   return email;
 };
 const passwordIsValid = value => typeof value === 'string' && value.length >= 8 && value.length <= 128 && !/\s/.test(value);
-const publicMember = member => member ? ({id: member.id, name: member.name, email: member.email, phone: member.phone || '', role: member.role, status: member.status, createdAt: member.createdAt || member.created_at}) : null;
-const mapMember = row => row && ({id: row.id, name: row.name, email: row.email, phone: row.phone || '', role: row.role, status: row.status, passwordHash: row.passwordHash ?? row.password_hash ?? null, createdAt: row.createdAt || row.created_at, updatedAt: row.updatedAt || row.updated_at});
+const normalizePhone = value => {
+  const phone = safeText(value, '연락처', 7, 30), digits = phone.replace(/\D/g, '');
+  if (/^01[016789]\d{7,8}$/.test(digits)) return digits.length === 10 ? `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}` : `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+  return phone;
+};
+const publicMember = member => member ? ({id: member.id, name: member.name, email: member.email, phone: member.phone ? normalizePhone(member.phone) : '', role: member.role, status: member.status, createdAt: member.createdAt || member.created_at}) : null;
+const mapMember = row => row && ({id: row.id, name: row.name, email: row.email, phone: row.phone ? normalizePhone(row.phone) : '', role: row.role, status: row.status, passwordHash: row.passwordHash ?? row.password_hash ?? null, createdAt: row.createdAt || row.created_at, updatedAt: row.updatedAt || row.updated_at});
 
 if (!useSupabase) {
   mkdirSync(data, {recursive: true});
@@ -471,7 +476,7 @@ app.get('/api/auth/me', (req, res) => {
 });
 app.post('/api/auth/signup', authRateLimit('signup'), async (req, res) => {
   const name = safeText(req.body.name, '이름', 2, 80), email = normalizeEmail(req.body.email);
-  const phone = typeof req.body.phone === 'string' && req.body.phone.trim() ? safeText(req.body.phone, '연락처', 7, 30) : '';
+  const phone = typeof req.body.phone === 'string' && req.body.phone.trim() ? normalizePhone(req.body.phone) : '';
   if (!passwordIsValid(req.body.password)) throw clientError('비밀번호는 공백 없이 8~128자로 입력해 주세요.');
   const member = await createAuthenticatedMember({name, email, phone, password: req.body.password});
   await createMemberSession(member, res, req.isSecureCookie); await Promise.all([claimAssets(member.id, req.sid), claimOrders(member.id, req.sid)]);
@@ -503,7 +508,7 @@ app.post('/api/auth/logout', async (req, res) => {
 });
 app.patch('/api/auth/profile', requireMember, async (req, res) => {
   const name = safeText(req.body.name, '이름', 2, 80);
-  const phone = typeof req.body.phone === 'string' && req.body.phone.trim() ? safeText(req.body.phone, '연락처', 7, 30) : '';
+  const phone = typeof req.body.phone === 'string' && req.body.phone.trim() ? normalizePhone(req.body.phone) : '';
   const member = await updateMember(req.member.id, {name, phone: phone || null});
   res.json({member: publicMember(member)});
 });
@@ -533,7 +538,7 @@ app.post('/api/orders', requireMember, async (req, res) => {
   if (!['demo', 'payment'].includes(mode) || (mode === 'payment' && !enabled)) throw clientError('결제 설정을 확인해 주세요.');
   const catalog = await listCatalogProducts(), clean = [];
   for (const item of items) { if (!await findAsset(item.assetId, req.sid, req.member.id)) throw clientError('이미지를 다시 업로드해 주세요.'); clean.push(validateItem({productId: item.productId, option: item.option, quantity: item.quantity, assetId: item.assetId, transform: item.transform}, catalog)); }
-  const id = 'AT' + randomBytes(12).toString('hex'), body = {items: clean, recipient: {name: recipient.name.trim(), phone: recipient.phone.trim(), address: recipient.address.trim()}, ...totals(clean), mode};
+  const id = 'AT' + randomBytes(12).toString('hex'), body = {items: clean, recipient: {name: recipient.name.trim(), phone: normalizePhone(recipient.phone), address: recipient.address.trim()}, ...totals(clean), mode};
   const status = mode === 'demo' ? 'demo' : 'pending', createdAt = isoNow();
   await insertOrder({id, session: req.sid, memberId: req.member.id, body, status, createdAt}); res.json({id, ...body});
 });
