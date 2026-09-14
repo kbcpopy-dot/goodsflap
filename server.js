@@ -38,6 +38,10 @@ const supabase = useSupabase ? createClient(process.env.SUPABASE_URL, process.en
 const createAuthClient = () => useSupabaseAuth ? createClient(process.env.SUPABASE_URL, publishableKey, {...supabaseOptions, auth: {...supabaseOptions.auth, flowType: 'implicit'}}) : null;
 const scryptAsync = promisify(scrypt);
 const memberSessionDays = 30;
+const maxOriginalBytes = 50 * 1024 * 1024;
+const legacyUploadBytes = 10 * 1024 * 1024;
+const maxImagePixels = 40000000;
+const supportedImageTypes = {'image/png': 'png', 'image/jpeg': 'jpeg', 'image/webp': 'webp'};
 const authAttempts = new Map();
 let db;
 
@@ -398,6 +402,13 @@ async function catalogRows() {
   const {data: rows, error} = await supabase.from('catalog_products').select('*').order('sort_order', {ascending: true}).order('id', {ascending: true});
   databaseError(error); catalogRowCache = rows.map(decodeProduct); return catalogRowCache;
 }
+async function insertDirectAsset(asset, originalPath, preview) {
+  const previewPath = `${asset.memberId}/${asset.id}.webp`;
+  const previewUpload = await supabase.storage.from('design-previews').upload(previewPath, preview, {contentType: 'image/webp', upsert: false});
+  if (previewUpload.error) { await supabase.storage.from('customer-originals').remove([originalPath]); storageError(previewUpload.error); }
+  const insert = await supabase.from('assets').insert({id: asset.id, session_hash: asset.session, member_id: asset.memberId, format: asset.format, width: asset.width, height: asset.height, original_path: originalPath, normalized_path: previewPath});
+  if (insert.error) { await Promise.all([supabase.storage.from('customer-originals').remove([originalPath]), supabase.storage.from('design-previews').remove([previewPath])]); databaseError(insert.error); }
+}
 async function resilientCatalogRows() {
   try { return await catalogRows(); }
   catch (error) {
@@ -601,18 +612,51 @@ app.patch('/api/auth/profile', requireMember, async (req, res) => {
   const member = await updateMember(req.member.id, {name, phone: phone || null});
   res.json({member: publicMember(member)});
 });
+app.post('/api/assets/upload-ticket', requireMember, async (req, res) => {
+  const size = Number(req.body.size), format = supportedImageTypes[req.body.type];
+  if (!format) throw clientError('PNG, JPG, WebP 이미지를 선택해 주세요.');
+  if (!Number.isSafeInteger(size) || size < 1 || size > maxOriginalBytes) throw clientError('이미지는 50MB 이하여야 합니다.');
+  if (!useSupabase) return res.json({direct: false, maxBytes: legacyUploadBytes});
+  const id = randomUUID(), objectPath = `${req.member.id}/${id}.${format}`;
+  const {data: ticket, error} = await supabase.storage.from('customer-originals').createSignedUploadUrl(objectPath, {upsert: false});
+  storageError(error);
+  res.json({direct: true, id, signedUrl: ticket.signedUrl, maxBytes: maxOriginalBytes});
+});
+app.post('/api/assets/:id/finalize', requireMember, async (req, res) => {
+  if (!useSupabase) throw clientError('직접 업로드를 사용할 수 없습니다.', 409);
+  if (!catalogMediaIdPattern.test(req.params.id)) throw clientError('업로드 정보를 확인해 주세요.');
+  const size = Number(req.body.size), format = supportedImageTypes[req.body.type];
+  if (!format || !Number.isSafeInteger(size) || size < 1 || size > maxOriginalBytes) throw clientError('업로드한 이미지 정보를 확인해 주세요.');
+  const existing = await findAsset(req.params.id, req.sid, req.member.id);
+  if (existing) return res.json({id: existing.id, width: existing.width, height: existing.height, url: '/api/assets/' + existing.id});
+  const originalPath = `${req.member.id}/${req.params.id}.${format}`;
+  try {
+    const {data: file, error} = await supabase.storage.from('customer-originals').download(originalPath);
+    storageError(error);
+    const bytes = Buffer.from(await file.arrayBuffer());
+    if (bytes.length !== size || bytes.length > maxOriginalBytes) throw clientError('업로드한 이미지의 용량을 확인해 주세요.');
+    const meta = await sharp(bytes, {limitInputPixels: maxImagePixels}).metadata();
+    if (meta.format !== format || meta.pages > 1) throw clientError('정지 PNG, JPG, WebP 이미지만 사용할 수 있습니다.');
+    const preview = await sharp(bytes, {limitInputPixels: maxImagePixels}).rotate().resize({width: 2400, height: 2400, fit: 'inside', withoutEnlargement: true}).webp({quality: 92, alphaQuality: 100}).toBuffer({resolveWithObject: true});
+    await insertDirectAsset({id: req.params.id, session: req.sid, memberId: req.member.id, format, width: preview.info.width, height: preview.info.height}, originalPath, preview.data);
+    res.json({id: req.params.id, width: preview.info.width, height: preview.info.height, url: '/api/assets/' + req.params.id});
+  } catch (error) {
+    await supabase.storage.from('customer-originals').remove([originalPath]);
+    throw error;
+  }
+});
 app.post('/api/assets', requireMember, async (req, res) => {
   const match = req.body.data?.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/);
   if (!match) throw clientError('PNG, JPG, WebP 이미지를 선택해 주세요.');
-  const bytes = Buffer.from(match[2], 'base64'); if (bytes.length > 10 * 1024 * 1024) throw clientError('이미지는 10MB 이하여야 합니다.');
-  const meta = await sharp(bytes, {limitInputPixels: 40000000}).metadata();
+  const bytes = Buffer.from(match[2], 'base64'); if (bytes.length > legacyUploadBytes) throw clientError('이미지는 10MB 이하여야 합니다.');
+  const meta = await sharp(bytes, {limitInputPixels: maxImagePixels}).metadata();
   if (!['png', 'jpeg', 'webp'].includes(meta.format) || meta.pages > 1) throw clientError('정지 이미지만 사용할 수 있습니다.');
   const id = randomUUID(), normalized = await sharp(bytes).rotate().png().toBuffer({resolveWithObject: true});
   await insertAsset({id, session: req.sid, memberId: req.member.id, format: meta.format, width: normalized.info.width, height: normalized.info.height}, bytes, normalized.data);
   res.json({id, width: normalized.info.width, height: normalized.info.height, url: '/api/assets/' + id});
 });
 app.get('/api/assets/:id', requireMember, async (req, res) => {
-  const asset = await findAsset(req.params.id, req.sid, req.member.id); if (!asset) return res.sendStatus(404); res.type('png').send(await readAsset(asset, 'normalized'));
+  const asset = await findAsset(req.params.id, req.sid, req.member.id); if (!asset) return res.sendStatus(404); res.type(asset.normalized_path?.endsWith('.webp') ? 'webp' : 'png').send(await readAsset(asset, 'normalized'));
 });
 app.post('/api/designs', requireMember, async (req, res) => res.status(201).json({design: await saveMemberDesign(req.member.id, req.sid, req.body)}));
 app.get('/api/designs', requireMember, async (req, res) => res.json(await listSavedDesigns(req.member.id)));
@@ -726,7 +770,7 @@ app.get('/api/admin/orders/:id/files/:index/:kind', requireAdmin, async (req, re
   if (req.params.kind === 'original') { res.attachment(`${row.id}-${req.params.index}.${asset.format}`).send(await readAsset(asset, 'original')); return; }
   if (req.params.kind !== 'print') return res.sendStatus(404);
   const [widthMm, heightMm] = item.mm.map(value => Math.round(value / 25.4 * 300)), transform = item.transform;
-  const imageBase64 = (await readAsset(asset, 'normalized')).toString('base64');
+  const imageBase64 = (await sharp(await readAsset(asset, 'original'), {limitInputPixels: maxImagePixels}).rotate().png().toBuffer()).toString('base64');
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${widthMm}" height="${heightMm}"><g transform="translate(${widthMm * (.5 + transform.x)} ${heightMm * (.5 + transform.y)}) rotate(${transform.rotation}) scale(${transform.scale})"><image x="${-widthMm / 2}" y="${-heightMm / 2}" width="${widthMm}" height="${heightMm}" preserveAspectRatio="xMidYMid meet" xlink:href="data:image/png;base64,${imageBase64}"/></g></svg>`;
   const png = await sharp(Buffer.from(svg)).png().withMetadata({density: 300}).toBuffer(); res.attachment(`${row.id}-${req.params.index}-300dpi-REVIEW.png`).send(png);
 });

@@ -26,9 +26,13 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   for(const id of ['postcard','sticker','tumbler','cushion','glow-light','colorwave-light','humidifier','diffuser'])assert.ok(catalog.products.some(product=>product.id===id),`${id} 상품이 카탈로그에 있어야 합니다.`);
   const image=await sharp({create:{width:600,height:500,channels:4,background:'#c68d65'}}).png().toBuffer();
   let response=await request('/api/assets',{method:'POST',cookie:anonCookie,body:{data:'data:image/png;base64,'+image.toString('base64')}});assert.equal(response.status,401);
+  response=await request('/api/assets/upload-ticket',{method:'POST',cookie:anonCookie,body:{name:'print.png',type:'image/png',size:image.length}});assert.equal(response.status,401);
   response=await request('/api/auth/signup',{method:'POST',cookie:anonCookie,body:{name:'테스트 회원',email:'member@example.com',phone:'01000000000',password:'safe-password-123'}});assert.equal(response.status,201);const signed=await response.json();assert.equal(signed.member.role,'customer');assert.equal(signed.member.phone,'010-0000-0000');
   const memberCookie=cookieFrom(response,'goodsflap_member');assert.ok(memberCookie);const authCookie=anonCookie+'; '+memberCookie;
   response=await request('/api/auth/me',{cookie:authCookie});assert.equal(response.status,200);assert.equal((await response.json()).member.email,'member@example.com');
+  response=await request('/api/assets/upload-ticket',{method:'POST',cookie:authCookie,body:{name:'print.png',type:'image/png',size:image.length}});assert.equal(response.status,200);const localTicket=await response.json();assert.equal(localTicket.direct,false);assert.equal(localTicket.maxBytes,10*1024*1024);
+  response=await request('/api/assets/upload-ticket',{method:'POST',cookie:authCookie,body:{name:'too-large.png',type:'image/png',size:50*1024*1024+1}});assert.equal(response.status,400);
+  response=await request('/api/assets/upload-ticket',{method:'POST',cookie:authCookie,body:{name:'unsafe.svg',type:'image/svg+xml',size:100}});assert.equal(response.status,400);
   response=await request('/api/assets',{method:'POST',cookie:authCookie,body:{data:'data:image/png;base64,'+image.toString('base64')}});assert.equal(response.status,200);const asset=await response.json();
   assert.equal((await request('/api/assets/'+asset.id,{cookie:anonCookie})).status,401);assert.equal((await request('/api/assets/'+asset.id,{cookie:authCookie})).status,200);
   response=await request('/api/designs',{method:'POST',cookie:authCookie,body:{productId:'mug',option:'화이트 · 330ml',assetId:asset.id,transform:{x:.1,y:0,scale:.8,rotation:25}}});assert.equal(response.status,201);const savedDesign=(await response.json()).design;assert.equal(savedDesign.assetId,asset.id);assert.equal(savedDesign.name,'AI Creator 머그컵');
