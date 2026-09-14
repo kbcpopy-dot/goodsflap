@@ -66,4 +66,4 @@ app.get('/api/admin/orders/:id/files/:index/:kind',requireAdmin,async(req,res)=>
 });
 app.use(express.static(path.join(root,'public')));
 app.use((err,req,res,next)=>{console.error(err.message);res.status(400).json({error:err.message?.includes('SQLITE')?'저장 중 오류가 발생했습니다.':err.message||'요청을 처리하지 못했습니다.'});});
-app.listen(Number(process.env.PORT||4310),'127.0.0.1',()=>console.log('아트텔링 스튜디오: '+origin));
+app.listen(Number(process.env.PORT||4310),'127.0.0.1',()=>console.log('굿즈플랩 스튜디오: '+origin));
