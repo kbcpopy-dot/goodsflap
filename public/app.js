@@ -5,7 +5,27 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'
 let catalog,products,cart=[],cartOwner='';try{cart=JSON.parse(localStorage.getItem('artell-cart')||'[]');if(!Array.isArray(cart))cart=[];cartOwner=localStorage.getItem('artell-cart-owner')||'';}catch{}
 let editor=null,adminToken='',toastTimer,member=null,pendingHash='';
 function toast(s){$('#toast').textContent=s;$('#toast').style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').style.display='none',4000);}
-async function api(url,body,method='POST',isAdmin=false){const r=await fetch(url,{method:body?method:'GET',headers:{'Content-Type':'application/json',...(isAdmin?{'X-Admin-Token':adminToken}:{})},...(body?{body:JSON.stringify(body)}:{})});const data=await r.json();if(!r.ok)throw Error(data.error||'요청을 처리하지 못했습니다.');return data;}
+function apiErrorMessage(status){if(status===413)return '이미지 용량이 서버 전송 한도를 넘었습니다. 이미지를 자동 최적화한 뒤 다시 시도해 주세요.';if(status===502||status===503||status===504)return '서버 연결이 원활하지 않습니다. 잠시 후 다시 시도해 주세요.';return '요청을 처리하지 못했습니다.';}
+async function api(url,body,method='POST',isAdmin=false){const r=await fetch(url,{method:body?method:'GET',headers:{'Content-Type':'application/json',...(isAdmin?{'X-Admin-Token':adminToken}:{})},...(body?{body:JSON.stringify(body)}:{})}),raw=await r.text();let data={};if(raw){try{data=JSON.parse(raw);}catch{data={error:apiErrorMessage(r.status)};}}if(!r.ok)throw Error(data.error||apiErrorMessage(r.status));return data;}
+function readBlobAsDataUrl(blob){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('이미지 파일을 읽지 못했습니다.'));reader.readAsDataURL(blob);});}
+async function prepareCatalogImage(file){
+ if(file.size>10*1024*1024)throw Error('이미지는 10MB 이하로 올려 주세요.');
+ if(file.type&&!['image/png','image/jpeg','image/webp'].includes(file.type))throw Error('PNG, JPG, WebP 이미지만 올릴 수 있습니다.');
+ const bitmap=await createImageBitmap(file),pixels=bitmap.width*bitmap.height;
+ if(pixels>40000000){bitmap.close();throw Error('이미지는 4천만 픽셀 이하로 올려 주세요.');}
+ if(file.size<=3*1024*1024){bitmap.close();return readBlobAsDataUrl(file);}
+ let scale=Math.min(1,3000/Math.max(bitmap.width,bitmap.height)),optimized=null;
+ const canvas=document.createElement('canvas'),encode=quality=>new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(Error('이미지를 최적화하지 못했습니다.')),'image/webp',quality));
+ for(let attempt=0;attempt<4&&!optimized;attempt+=1){
+  canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+  canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);
+  for(const quality of [.96,.9,.82]){const candidate=await encode(quality);if(candidate.size<=3*1024*1024){optimized=candidate;break;}}
+  scale*=.8;
+ }
+ bitmap.close();
+ if(!optimized)throw Error('이미지 내용이 복잡해 자동 최적화 후에도 용량이 큽니다. 가로·세로 크기를 줄여 다시 시도해 주세요.');
+ return readBlobAsDataUrl(optimized);
+}
 async function readMember(){const r=await fetch('/api/auth/me');if(r.status===401)return null;const data=await r.json();if(!r.ok)throw Error(data.error||'계정 정보를 불러오지 못했습니다.');return data.member;}
 const loginIcon='<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="3.25"></circle><path d="M5.5 20c.7-3.25 3.15-5.1 6.5-5.1s5.8 1.85 6.5 5.1"></path></svg>';
 const passwordEyeIcon='<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2.5 12s3.3-5.3 9.5-5.3 9.5 5.3 9.5 5.3-3.3 5.3-9.5 5.3S2.5 12 2.5 12Z"></path><circle cx="12" cy="12" r="2.6"></circle></svg>';
@@ -275,7 +295,7 @@ async function renderAdminMembers(panel){
 }
 function productCategoryOptions(selected){return [['paper','엽서 · 스티커'],['keyring','키링 · 배지'],['table','머그 · 테이블'],['wearable','웨어러블'],['frame','액자 · 패브릭'],['light','조명 · 홈케어'],['other','기타']].map(([value,label])=>`<option value="${value}" ${selected===value?'selected':''}>${label}</option>`).join('');}
 function catalogMediaValue(product,field){const legacy=product.image||'';if(field==='thumbnailImage')return product.thumbnailImage||legacy;if(field==='detailImage')return product.detailImage||product.thumbnailImage||legacy;return product.studioImage||'';}
-function catalogMediaControl(field,title,copy,value){return `<section class="catalog-media-field" data-catalog-media-field="${field}"><div class="catalog-media-head"><div><h4>${title}</h4><p>${copy}</p></div><button type="button" class="text-button" data-clear-catalog-media="${field}" ${value?'':'hidden'}>이미지 삭제</button></div><div class="catalog-media-preview">${value?`<img src="${esc(value)}" alt="${title} 미리보기">`:'<span>이미지를 끌어 놓거나 파일을 선택하세요</span>'}</div><input type="hidden" name="${field}" value="${esc(value)}"><div class="catalog-media-actions"><label class="media-upload">이미지 업로드<input type="file" accept="image/png,image/jpeg,image/webp" data-catalog-media-upload="${field}"></label><small>PNG · JPG · WebP / 10MB 이하</small></div></section>`;}
+function catalogMediaControl(field,title,copy,value){return `<section class="catalog-media-field" data-catalog-media-field="${field}"><div class="catalog-media-head"><div><h4>${title}</h4><p>${copy}</p></div><button type="button" class="text-button" data-clear-catalog-media="${field}" ${value?'':'hidden'}>이미지 삭제</button></div><div class="catalog-media-preview">${value?`<img src="${esc(value)}" alt="${title} 미리보기">`:'<span>이미지를 끌어 놓거나 파일을 선택하세요</span>'}</div><input type="hidden" name="${field}" value="${esc(value)}"><div class="catalog-media-actions"><label class="media-upload">이미지 업로드<input type="file" accept="image/png,image/jpeg,image/webp" data-catalog-media-upload="${field}"></label><small>PNG · JPG · WebP / 10MB 이하 · 큰 이미지는 자동 최적화</small></div></section>`;}
 async function renderAdminProducts(panel){
  const items=await api('/api/admin/products',null,'GET',true), editing=items.find(item=>item.id===adminEditingProductId)||null;
  const product=editing||{id:'',name:'',tag:'',price:0,shippingFee:3000,options:[''],mm:[90,80],color:'#e8ded5',category:'other',visible:true,sortOrder:items.length};
@@ -301,7 +321,7 @@ async function renderAdminProducts(panel){
  areaCanvas.onpointerup=areaCanvas.onpointercancel=()=>areaDrag=null;
  panel.querySelectorAll('[data-area-nudge]').forEach(button=>button.onclick=()=>{const current=readArea(),action=button.dataset.areaNudge;if(action==='left')current.x-=3;if(action==='right')current.x+=3;if(action==='up')current.y-=3;if(action==='down')current.y+=3;if(action==='smaller'||action==='larger'){writeArea(fitArea(current,current.w+(action==='larger'?5:-5)));}else writeArea(clampArea(current));refreshAreaEditor();});
  panel.querySelectorAll('[name=printWidth],[name=printHeight]').forEach(input=>input.addEventListener('input',()=>{writeArea(fitArea(readArea()));refreshAreaEditor();}));
- const uploadCatalogMedia=async(input,file)=>{const field=input.dataset.catalogMediaUpload;if(!file||!field)return;if(file.size>10*1024*1024){toast('이미지는 10MB 이하로 올려 주세요.');input.value='';return;}if(file.type&&!['image/png','image/jpeg','image/webp'].includes(file.type)){toast('PNG, JPG, WebP 이미지만 올릴 수 있습니다.');input.value='';return;}const label=input.closest('.media-upload');label.classList.add('is-uploading');try{const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('이미지 파일을 읽지 못했습니다.'));reader.readAsDataURL(file);});const uploaded=await api('/api/admin/catalog-media',{data},'POST',true);setCatalogMedia(field,uploaded.url);toast('상품 이미지를 올렸습니다. 저장하면 스토어에 반영됩니다.');}catch(error){toast(error.message);}finally{label.classList.remove('is-uploading');input.value='';}};
+ const uploadCatalogMedia=async(input,file)=>{const field=input.dataset.catalogMediaUpload;if(!file||!field)return;const label=input.closest('.media-upload');label.classList.add('is-uploading');try{if(file.size>3*1024*1024)toast('큰 이미지를 업로드용으로 자동 최적화하고 있습니다.');const data=await prepareCatalogImage(file),uploaded=await api('/api/admin/catalog-media',{data},'POST',true);setCatalogMedia(field,uploaded.url);toast('상품 이미지를 올렸습니다. 저장하면 스토어에 반영됩니다.');}catch(error){toast(error.message);}finally{label.classList.remove('is-uploading');input.value='';}};
  panel.querySelectorAll('[data-catalog-media-upload]').forEach(input=>input.onchange=()=>uploadCatalogMedia(input,input.files?.[0]));
  panel.querySelectorAll('.catalog-media-preview').forEach(preview=>{const clearDrag=()=>preview.classList.remove('is-dragging');preview.addEventListener('dragover',event=>{event.preventDefault();preview.classList.add('is-dragging');});preview.addEventListener('dragleave',clearDrag);preview.addEventListener('drop',event=>{event.preventDefault();clearDrag();const input=preview.closest('[data-catalog-media-field]').querySelector('[data-catalog-media-upload]');uploadCatalogMedia(input,event.dataTransfer?.files?.[0]);});});
  panel.querySelectorAll('[data-clear-catalog-media]').forEach(button=>button.onclick=()=>setCatalogMedia(button.dataset.clearCatalogMedia,''));
