@@ -221,16 +221,15 @@ async function updateMember(id, fields) {
 async function createAuthenticatedMember({name, email, phone, password}) {
   if (!useSupabase) {
     if (await findMemberByEmail(email)) throw clientError('이미 가입된 이메일입니다. 로그인해 주세요.');
-    return {member: await createMember({id: randomUUID(), name, email, phone, passwordHash: await hashPassword(password)}), confirmed: true};
+    return createMember({id: randomUUID(), name, email, phone, passwordHash: await hashPassword(password)});
   }
   if (!useSupabaseAuth) throw clientError('회원 인증 설정이 아직 완료되지 않았습니다. 운영 환경에 SUPABASE_PUBLISHABLE_KEY를 추가해 주세요.', 503);
-  const authClient = createAuthClient();
-  const {data: auth, error} = await authClient.auth.signUp({email, password, options: {data: {name}, emailRedirectTo: origin.replace(/\/$/, '') + '/?confirmed=1'}});
-  if (error || !auth.user || (Array.isArray(auth.user.identities) && auth.user.identities.length === 0)) { console.error('signup:', error?.message); throw clientError('이미 가입된 이메일이거나 가입 정보를 확인해 주세요.'); }
+  // The site currently creates members without an email-verification wait state.
+  const {data: auth, error} = await supabase.auth.admin.createUser({email, password, email_confirm: true, user_metadata: {name}});
+  if (error || !auth.user) { console.error('signup:', error?.message); throw clientError('이미 가입된 이메일이거나 가입 정보를 확인해 주세요.'); }
   try {
     const existing = await findMemberById(auth.user.id);
-    const member = existing ? await updateMember(auth.user.id, {name, email, phone: phone || null}) : await createMember({id: auth.user.id, name, email, phone});
-    return {member, confirmed: Boolean(auth.session)};
+    return existing ? await updateMember(auth.user.id, {name, email, phone: phone || null}) : await createMember({id: auth.user.id, name, email, phone});
   } catch (error) { await supabase.auth.admin.deleteUser(auth.user.id); throw error; }
 }
 async function authenticateMember(email, password) {
@@ -424,10 +423,9 @@ app.post('/api/auth/signup', authRateLimit('signup'), async (req, res) => {
   const name = safeText(req.body.name, '이름', 2, 80), email = normalizeEmail(req.body.email);
   const phone = typeof req.body.phone === 'string' && req.body.phone.trim() ? safeText(req.body.phone, '연락처', 7, 30) : '';
   if (!passwordIsValid(req.body.password)) throw clientError('비밀번호는 공백 없이 8~128자로 입력해 주세요.');
-  const result = await createAuthenticatedMember({name, email, phone, password: req.body.password});
-  if (!result.confirmed) return res.status(202).json({pendingConfirmation: true});
-  await createMemberSession(result.member, res, req.isSecureCookie); await Promise.all([claimAssets(result.member.id, req.sid), claimOrders(result.member.id, req.sid)]);
-  res.status(201).json({member: publicMember(result.member)});
+  const member = await createAuthenticatedMember({name, email, phone, password: req.body.password});
+  await createMemberSession(member, res, req.isSecureCookie); await Promise.all([claimAssets(member.id, req.sid), claimOrders(member.id, req.sid)]);
+  res.status(201).json({member: publicMember(member)});
 });
 app.post('/api/auth/confirm', async (req, res) => {
   if (!useSupabaseAuth) throw clientError('회원 인증 설정이 아직 완료되지 않았습니다.', 503);

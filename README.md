@@ -26,7 +26,7 @@ Node.js 24 이상에서 이 폴더를 열고 `npm install`, `npm start`를 실�
 ## Vercel + Supabase 배포
 Vercel 프로젝트는 이 GitHub 저장소의 루트 디렉터리를 연결합니다. 배포 전에 `supabase/migrations/20260914082948_members_admin_products.sql`을 Supabase SQL Editor 또는 CLI로 적용합니다.
 
-Vercel에는 `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `PUBLIC_URL`, `ADMIN_TOKEN`을 설정합니다. `PUBLIC_URL`은 실제 주소(예: `https://artell.co.kr`)여야 합니다. Supabase Authentication의 URL Configuration에도 같은 Site URL과 `https://artell.co.kr/?confirmed=1` Redirect URL을 추가하고, 이메일 확인을 켭니다. 가입자는 인증 메일의 링크를 누른 뒤 로그인 세션이 열립니다.
+Vercel에는 `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `PUBLIC_URL`, `ADMIN_TOKEN`을 설정합니다. `PUBLIC_URL`은 실제 주소(예: `https://artell.co.kr`)여야 합니다. Supabase Authentication의 URL Configuration에도 같은 Site URL을 등록합니다. 현재 사이트 회원가입은 서버에서 이메일을 가입 즉시 확인 처리하므로 인증 메일 발송·확인 대기 없이 바로 로그인됩니다.
 
 시크릿 키와 관리자 키는 GitHub 또는 브라우저 코드에 넣지 않습니다. Supabase를 설정하지 않은 로컬 실행은 기존 SQLite `data` 폴더를 계속 사용합니다.
 

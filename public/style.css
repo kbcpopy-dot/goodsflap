@@ -128,3 +128,7 @@ input[type=email],textarea{font-family:inherit}input[type=email]{width:100%;padd
 .header-account[hidden]{display:none}
 /* Center each order status inside its badge. */
 .order-head .badge{display:inline-flex;align-items:center;justify-content:center;min-width:68px;min-height:54px;box-sizing:border-box;padding:8px 12px;text-align:center;line-height:1.2;white-space:nowrap;flex-shrink:0}
+
+/* Delivery addresses are selected through the postcode service; users add only the detail. */
+.address-lookup{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}.summary #address,.summary #address-detail{margin-top:8px}.summary input[readonly]{background:#f4f2ed;color:#45424e}.address-lookup .secondary{white-space:nowrap;padding:10px 14px}
+@media(max-width:420px){.address-lookup{grid-template-columns:1fr}.address-lookup .secondary{width:100%}}
