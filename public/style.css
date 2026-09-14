@@ -145,6 +145,8 @@ input[type=email],textarea{font-family:inherit}input[type=email]{width:100%;padd
 .phone-format-hint{margin:7px 0 0}
 
 .product-price-summary{margin:10px 0 0;padding:10px 12px;border:1px solid #d5cfca;border-radius:10px;background:#fff;font-size:12px;font-weight:800}.admin-product-card .admin-product-total{color:var(--ink);font-size:11px;font-weight:700}
+.admin-product-actions{display:grid;gap:7px;min-width:58px}.admin-product-actions .product-delete{padding:3px 7px;color:#a33d62;text-align:center}.admin-product-actions .product-delete:hover{color:#721b3d}
+@media(max-width:600px){.admin-product-actions{grid-column:1/-1;grid-template-columns:1fr 1fr;width:100%}.admin-product-actions .secondary{grid-column:auto;width:100%}.admin-product-actions .product-delete{align-self:center}}
 
 .catalog-media-preview{transition:border-color .15s ease,background .15s ease}.catalog-media-preview.is-dragging{border:2px solid var(--purple);background:#eee5ff;color:var(--ink)}
 

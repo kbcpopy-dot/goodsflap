@@ -415,7 +415,7 @@ async function listCatalogProducts(includeHidden = false, sourceRows = null) {
     return {...product, ...(override || {}), id: product.id, visible: override?.visible ?? true, sortOrder: override?.sortOrder ?? index, category: override?.category || product.category || defaultCategories[product.id] || 'other'};
   });
   result.push(...overrides.values());
-  return result.filter(product => includeHidden || product.visible !== false).sort((a, b) => (a.sortOrder - b.sortOrder) || a.name.localeCompare(b.name, 'ko'));
+  return result.filter(product => product.deleted !== true).filter(product => includeHidden || product.visible !== false).sort((a, b) => (a.sortOrder - b.sortOrder) || a.name.localeCompare(b.name, 'ko'));
 }
 async function listCatalogCategories(includeHidden = false, sourceRows = null) {
   const categoryRows = (sourceRows || await resilientCatalogRows()).filter(isCategoryRow);
@@ -472,10 +472,13 @@ function productInput(input, current = {}, create = false, validCategories = def
   return {id, name, tag, price, shippingFee, options, mm, color, category, thumbnailImage, detailImage, studioImage, designArea, visible, sortOrder};
 }
 async function saveCatalogProduct(product) {
-  const now = isoNow(), body = {id: product.id, name: product.name, tag: product.tag, price: product.price, shippingFee: product.shippingFee, options: product.options, mm: product.mm, color: product.color, category: product.category, thumbnailImage: product.thumbnailImage, detailImage: product.detailImage, studioImage: product.studioImage, designArea: product.designArea};
+  const now = isoNow(), body = {id: product.id, name: product.name, tag: product.tag, price: product.price, shippingFee: product.shippingFee, options: product.options, mm: product.mm, color: product.color, category: product.category, thumbnailImage: product.thumbnailImage, detailImage: product.detailImage, studioImage: product.studioImage, designArea: product.designArea, deleted:product.deleted === true};
   if (!useSupabase) db.prepare('INSERT INTO catalog_products(id,body,visible,sortOrder,createdAt,updatedAt) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body,visible=excluded.visible,sortOrder=excluded.sortOrder,updatedAt=excluded.updatedAt').run(product.id, JSON.stringify(body), product.visible ? 1 : 0, product.sortOrder, now, now);
   else databaseError((await supabase.from('catalog_products').upsert({id: product.id, body, visible: product.visible, sort_order: product.sortOrder, updated_at: now}, {onConflict: 'id'})).error);
   return (await listCatalogProducts(true)).find(item => item.id === product.id);
+}
+async function removeCatalogProduct(product) {
+  await saveCatalogProduct({...product, visible:false, deleted:true});
 }
 function parseCookie(req, name, pattern) {
   const match = req.headers.cookie?.match(new RegExp(`(?:^|; )${name}=(${pattern})(?:;|$)`));
@@ -704,6 +707,10 @@ app.post('/api/admin/products', requireAdmin, async (req, res) => {
 app.patch('/api/admin/products/:id', requireAdmin, async (req, res) => {
   const current = (await listCatalogProducts(true)).find(product => product.id === req.params.id); if (!current) return res.sendStatus(404);
   const categories = await listCatalogCategories(), product = productInput({...req.body, id: current.id}, current, false, new Set(categories.map(category => category.id))); res.json({product: await saveCatalogProduct(product)});
+});
+app.delete('/api/admin/products/:id', requireAdmin, async (req, res) => {
+  const current = (await listCatalogProducts(true)).find(product => product.id === req.params.id); if (!current) return res.sendStatus(404);
+  await removeCatalogProduct(current); res.json({ok:true});
 });
 app.get('/api/admin/orders', requireAdmin, async (_, res) => res.json(await listOrders('', '', true)));
 app.patch('/api/admin/orders/:id', requireAdmin, async (req, res) => {
