@@ -1,0 +1,14 @@
+# 굿즈플랩 프로젝트 작업 규칙
+
+이 폴더는 굿즈플랩 사이트의 기준 작업 폴더이며 GitHub 저장소 `https://github.com/kbcpopy-dot/goodsflap.git`와 동기화한다.
+
+## 작업 시작
+
+코드나 문서를 읽거나 수정하기 전에 `pwsh -NoProfile -File tools/sync-start.ps1`을 실행한다. 로컬 변경이 있으면 이를 보존하고 자동 병합하지 않는다. 원격 변경과 충돌할 가능성이 있으면 사용자에게 상태를 설명한다.
+
+## 작업 종료
+
+요청한 변경과 검증이 끝나면 `pwsh -NoProfile -File tools/sync-end.ps1 -Message "<작업을 설명하는 짧은 메시지>"`를 실행해 해당 변경을 커밋하고 `main`에 푸시한다. 사용자가 동기화를 원하지 않는다고 명시한 작업에서는 푸시하지 않는다.
+
+`.env`, `.env.*`(예제 제외), `data/`, `node_modules/`, `.vercel/`, 고객 주문과 업로드 원본, 비밀키를 커밋하지 않는다. 관련 없는 사용자 변경은 커밋하지 않는다.
+
