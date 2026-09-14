@@ -65,6 +65,12 @@ if (!useSupabase) {
       id TEXT PRIMARY KEY, body TEXT NOT NULL, visible INTEGER NOT NULL DEFAULT 1,
       sortOrder INTEGER NOT NULL DEFAULT 0, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS saved_designs(
+      id TEXT PRIMARY KEY, memberId TEXT NOT NULL, assetId TEXT NOT NULL, body TEXT NOT NULL,
+      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL,
+      FOREIGN KEY(memberId) REFERENCES members(id) ON DELETE CASCADE,
+      FOREIGN KEY(assetId) REFERENCES assets(id) ON DELETE RESTRICT
+    );
   `);
   const ensureColumn = (table, column, definition) => {
     const exists = db.prepare(`PRAGMA table_info(${table})`).all().some(entry => entry.name === column);
@@ -72,7 +78,7 @@ if (!useSupabase) {
   };
   ensureColumn('assets', 'memberId', 'TEXT');
   ensureColumn('orders', 'memberId', 'TEXT');
-  db.exec('CREATE INDEX IF NOT EXISTS orders_member_created_idx ON orders(memberId, createdAt DESC); CREATE INDEX IF NOT EXISTS member_sessions_token_idx ON member_sessions(tokenHash);');
+  db.exec('CREATE INDEX IF NOT EXISTS orders_member_created_idx ON orders(memberId, createdAt DESC); CREATE INDEX IF NOT EXISTS saved_designs_member_updated_idx ON saved_designs(memberId, updatedAt DESC); CREATE INDEX IF NOT EXISTS member_sessions_token_idx ON member_sessions(tokenHash);');
 }
 
 async function insertAsset(asset, original, normalized) {
@@ -173,6 +179,29 @@ async function claimOrders(memberId, sid) {
 async function claimAssets(memberId, sid) {
   if (!useSupabase) { db.prepare('UPDATE assets SET memberId=? WHERE memberId IS NULL AND session=?').run(memberId, sid); return; }
   databaseError((await supabase.from('assets').update({member_id: memberId}).is('member_id', null).eq('session_hash', sid)).error);
+}
+
+const unpackSavedDesign = row => ({id: row.id, ...(typeof row.body === 'string' ? JSON.parse(row.body) : row.body), memberId: row.memberId || row.member_id, createdAt: row.createdAt || row.created_at, updatedAt: row.updatedAt || row.updated_at});
+async function insertSavedDesign(row) {
+  if (!useSupabase) { db.prepare('INSERT INTO saved_designs(id,memberId,assetId,body,createdAt,updatedAt) VALUES(?,?,?,?,?,?)').run(row.id, row.memberId, row.assetId, JSON.stringify(row.body), row.createdAt, row.updatedAt); return; }
+  databaseError((await supabase.from('saved_designs').insert({id: row.id, member_id: row.memberId, asset_id: row.assetId, body: row.body, created_at: row.createdAt, updated_at: row.updatedAt})).error);
+}
+async function listSavedDesigns(memberId) {
+  if (!useSupabase) return db.prepare('SELECT * FROM saved_designs WHERE memberId=? ORDER BY updatedAt DESC').all(memberId).map(unpackSavedDesign);
+  const {data: rows, error} = await supabase.from('saved_designs').select('*').eq('member_id', memberId).order('updated_at', {ascending: false}); databaseError(error); return rows.map(unpackSavedDesign);
+}
+async function saveMemberDesign(memberId, sid, input) {
+  if (!input || typeof input !== 'object') throw clientError('저장할 디자인을 확인해 주세요.');
+  const productId = typeof input.productId === 'string' ? input.productId.trim() : '';
+  const option = typeof input.option === 'string' ? input.option.trim() : '';
+  const assetId = typeof input.assetId === 'string' ? input.assetId.trim() : '';
+  if (!productId || !option || !assetId) throw clientError('상품, 옵션, 이미지를 확인해 주세요.');
+  if (!await findAsset(assetId, sid, memberId)) throw clientError('업로드한 이미지를 다시 선택해 주세요.', 404);
+  const catalog = await listCatalogProducts(true); let item;
+  try { item = validateItem({productId, option, quantity: 1, assetId, transform: input.transform}, catalog); }
+  catch { throw clientError('상품 옵션 또는 디자인 배치를 확인해 주세요.'); }
+  const now = isoNow(), body = {productId: item.productId, option: item.option, assetId: item.assetId, transform: item.transform, name: item.name, mm: item.mm, schemaVersion: item.schemaVersion};
+  const row = {id: randomUUID(), memberId, assetId, body, createdAt: now, updatedAt: now}; await insertSavedDesign(row); return unpackSavedDesign(row);
 }
 async function hashPassword(password) {
   const salt = randomBytes(16).toString('hex');
@@ -470,6 +499,8 @@ app.post('/api/assets', requireMember, async (req, res) => {
 app.get('/api/assets/:id', requireMember, async (req, res) => {
   const asset = await findAsset(req.params.id, req.sid, req.member.id); if (!asset) return res.sendStatus(404); res.type('png').send(await readAsset(asset, 'normalized'));
 });
+app.post('/api/designs', requireMember, async (req, res) => res.status(201).json({design: await saveMemberDesign(req.member.id, req.sid, req.body)}));
+app.get('/api/designs', requireMember, async (req, res) => res.json(await listSavedDesigns(req.member.id)));
 app.get('/api/catalog-media/:id', async (req, res) => {
   const image = await readCatalogMedia(req.params.id); if (!image) return res.sendStatus(404); res.type('png').send(image);
 });

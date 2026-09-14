@@ -31,6 +31,8 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   response=await request('/api/auth/me',{cookie:authCookie});assert.equal(response.status,200);assert.equal((await response.json()).member.email,'member@example.com');
   response=await request('/api/assets',{method:'POST',cookie:authCookie,body:{data:'data:image/png;base64,'+image.toString('base64')}});assert.equal(response.status,200);const asset=await response.json();
   assert.equal((await request('/api/assets/'+asset.id,{cookie:anonCookie})).status,401);assert.equal((await request('/api/assets/'+asset.id,{cookie:authCookie})).status,200);
+  response=await request('/api/designs',{method:'POST',cookie:authCookie,body:{productId:'mug',option:'화이트 · 330ml',assetId:asset.id,transform:{x:.1,y:0,scale:.8,rotation:25}}});assert.equal(response.status,201);const savedDesign=(await response.json()).design;assert.equal(savedDesign.assetId,asset.id);assert.equal(savedDesign.name,'AI Creator 머그컵');
+  response=await request('/api/designs',{cookie:authCookie});assert.equal(response.status,200);assert.equal((await response.json()).length,1);assert.equal((await request('/api/designs',{cookie:anonCookie})).status,401);
   const item={productId:'mug',option:'화이트 · 330ml',quantity:2,assetId:asset.id,transform:{x:.1,y:0,scale:.8,rotation:25},unitPrice:1};
   response=await request('/api/orders',{method:'POST',cookie:authCookie,body:{items:[item],recipient:{name:'테스트',phone:'01000000000',address:'테스트용 주소'},consent:true,mode:'demo'}});assert.equal(response.status,200);const order=await response.json();assert.equal(order.amount,33000);
   response=await request('/api/orders',{cookie:authCookie});assert.equal(response.status,200);assert.equal((await response.json()).length,1);assert.equal((await request('/api/orders',{cookie:anonCookie})).status,401);
@@ -55,6 +57,8 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   const otherMemberCookie=cookieFrom(response,'goodsflap_member'),otherAuthCookie=anonCookie+'; '+otherMemberCookie;
   assert.equal((await request('/api/admin/bootstrap',{method:'POST',cookie:otherAuthCookie,headers:{'X-Admin-Token':'test-admin-only'},body:{}})).status,403);
   assert.equal((await request('/api/assets/'+asset.id,{cookie:otherAuthCookie})).status,404);
+  response=await request('/api/designs',{cookie:otherAuthCookie});assert.equal(response.status,200);assert.deepEqual(await response.json(),[]);
+  response=await request('/api/designs',{method:'POST',cookie:otherAuthCookie,body:{productId:'mug',option:'화이트 · 330ml',assetId:asset.id,transform:{x:0,y:0,scale:.8,rotation:0}}});assert.equal(response.status,404);
   response=await request('/api/orders',{method:'POST',cookie:otherAuthCookie,body:{items:[item],recipient:{name:'다른 회원',phone:'01011112222',address:'테스트용 주소'},consent:true,mode:'demo'}});assert.equal(response.status,400);
   response=await request('/api/auth/login',{method:'POST',headers:{Origin:'https://untrusted.example'},body:{}});assert.equal(response.status,403);
   response=await request('/api/auth/login',{method:'POST',headers:{Origin:'https://www.artell.co.kr'},body:{email:'member@example.com',password:'safe-password-123'}});assert.equal(response.status,200);
