@@ -14,8 +14,28 @@ const useSupabase = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SER
 const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 const useSupabaseAuth = useSupabase && Boolean(publishableKey);
 const data = process.env.DATA_DIR || (process.env.VERCEL ? path.join('/tmp', 'goodsflap-data') : path.join(root, 'data'));
-const supabase = useSupabase ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {auth: {persistSession: false, autoRefreshToken: false, detectSessionInUrl: false}}) : null;
-const createAuthClient = () => useSupabaseAuth ? createClient(process.env.SUPABASE_URL, publishableKey, {auth: {persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, flowType: 'implicit'}}) : null;
+const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+async function resilientSupabaseFetch(input, init = {}) {
+  const method = String(init.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+  const attempts = ['GET', 'HEAD'].includes(method) ? 3 : 1;
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await fetch(input, init);
+      if (![502, 503, 504].includes(response.status) || attempt === attempts - 1) return response;
+      try { await response.body?.cancel(); } catch {}
+      lastError = new Error(`Supabase HTTP ${response.status}`);
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts - 1) throw error;
+    }
+    await wait(120 * (attempt + 1));
+  }
+  throw lastError;
+}
+const supabaseOptions = {auth: {persistSession: false, autoRefreshToken: false, detectSessionInUrl: false}, global: {fetch: resilientSupabaseFetch}};
+const supabase = useSupabase ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, supabaseOptions) : null;
+const createAuthClient = () => useSupabaseAuth ? createClient(process.env.SUPABASE_URL, publishableKey, {...supabaseOptions, auth: {...supabaseOptions.auth, flowType: 'implicit'}}) : null;
 const scryptAsync = promisify(scrypt);
 const memberSessionDays = 30;
 const authAttempts = new Map();
@@ -362,12 +382,21 @@ function decodeProduct(row) {
   const body = typeof row.body === 'string' ? JSON.parse(row.body) : row.body;
   return {...body, id: row.id, visible: row.visible ?? true, sortOrder: row.sortOrder ?? row.sort_order ?? 0};
 }
+let catalogRowCache = [];
 async function catalogRows() {
   if (!useSupabase) return db.prepare('SELECT * FROM catalog_products ORDER BY sortOrder ASC, id ASC').all().map(decodeProduct);
-  const {data: rows, error} = await supabase.from('catalog_products').select('*').order('sort_order', {ascending: true}).order('id', {ascending: true}); databaseError(error); return rows.map(decodeProduct);
+  const {data: rows, error} = await supabase.from('catalog_products').select('*').order('sort_order', {ascending: true}).order('id', {ascending: true});
+  databaseError(error); catalogRowCache = rows.map(decodeProduct); return catalogRowCache;
 }
 async function listCatalogProducts(includeHidden = false) {
-  const overrides = new Map((await catalogRows()).map(product => [product.id, product]));
+  let rows;
+  try { rows = await catalogRows(); }
+  catch (error) {
+    if (!useSupabase || error.status !== 500) throw error;
+    console.warn('catalog: Supabase 조회 실패, 최근 상품 정보 또는 기본 상품 정보를 사용합니다.');
+    rows = catalogRowCache;
+  }
+  const overrides = new Map(rows.map(product => [product.id, product]));
   const result = defaultProducts.map((product, index) => {
     const override = overrides.get(product.id); if (override) overrides.delete(product.id);
     return {...product, ...(override || {}), id: product.id, visible: override?.visible ?? true, sortOrder: override?.sortOrder ?? index, category: override?.category || product.category || defaultCategories[product.id] || 'other'};
@@ -446,7 +475,13 @@ app.use(async (req, res, next) => {
     if (!sid) { sid = randomBytes(32).toString('hex'); res.cookie('artell_session', sid, {httpOnly: true, sameSite: 'lax', secure, maxAge: 30 * 86400000, path: '/'}); }
     req.sid = sessionKey(sid); req.isSecureCookie = secure;
     const memberToken = parseCookie(req, 'goodsflap_member', '[A-Za-z0-9_-]{30,100}');
-    req.memberSession = await memberFromToken(memberToken); req.member = req.memberSession?.member || null;
+    req.authUnavailable = false;
+    try { req.memberSession = await memberFromToken(memberToken); req.member = req.memberSession?.member || null; }
+    catch (error) {
+      if (!useSupabase || error.status !== 500) throw error;
+      req.authUnavailable = true; req.memberSession = null; req.member = null;
+      console.warn('auth session: 회원 세션 조회를 잠시 완료하지 못했습니다.');
+    }
     next();
   } catch (error) { next(error); }
 });
@@ -457,11 +492,13 @@ function validLegacyAdmin(value) {
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 function requireMember(req, res, next) {
+  if (req.authUnavailable) return res.status(503).json({error: '회원 정보를 잠시 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'});
   if (!req.member) return res.status(401).json({error: '로그인 후 이용해 주세요.'});
   if (req.member.status !== 'active') return res.status(403).json({error: '현재 이용이 제한된 계정입니다.'});
   next();
 }
 function requireAdmin(req, res, next) {
+  if (req.authUnavailable) return res.status(503).json({error: '회원 정보를 잠시 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'});
   if (req.member?.role === 'admin' && req.member.status === 'active') return next();
   return res.status(403).json({error: '관리자 권한이 필요합니다.'});
 }
@@ -472,6 +509,7 @@ function requireLegacyAdmin(req, res, next) {
 
 app.get('/api/catalog', async (_, res) => res.json({products: await listCatalogProducts(), paymentEnabled: enabled, paymentMode: enabled && process.env.TOSS_CLIENT_KEY.startsWith('test_') ? 'test' : 'live', clientKey: enabled ? process.env.TOSS_CLIENT_KEY : null}));
 app.get('/api/auth/me', (req, res) => {
+  if (req.authUnavailable) return res.status(503).json({error: '회원 정보를 잠시 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'});
   if (!req.member || req.member.status !== 'active') return res.status(401).json({member: null});
   res.json({member: publicMember(req.member)});
 });
