@@ -4,6 +4,7 @@ data/
 .env.*
 !.env.example
 .vercel/
+supabase/.temp/
 *.log
 public/media/goodsflap-film*
 public/media/goodsflap-frames.jpg
