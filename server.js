@@ -379,8 +379,9 @@ function productInput(input, current = {}, create = false) {
   const requestedId = typeof input.id === 'string' ? input.id.trim().toLowerCase() : '';
   const id = create ? (requestedId || `goods-${randomBytes(5).toString('hex')}`) : current.id;
   if (!/^[a-z0-9][a-z0-9-]{2,49}$/.test(id)) throw clientError('상품 코드에는 영문 소문자, 숫자, 하이픈만 사용할 수 있습니다.');
-  const name = safeText(input.name, '상품명', 2, 80), tag = safeText(input.tag, '상품 설명', 2, 240), price = Number(input.price);
+  const name = safeText(input.name, '상품명', 2, 80), tag = safeText(input.tag, '상품 설명', 2, 240), price = Number(input.price), shippingFee = Number(input.shippingFee ?? current.shippingFee ?? 3000);
   if (!Number.isInteger(price) || price < 0 || price > 10000000) throw clientError('상품 가격을 확인해 주세요.');
+  if (!Number.isInteger(shippingFee) || shippingFee < 0 || shippingFee > 10000000) throw clientError('상품 배송비를 확인해 주세요.');
   const sourceOptions = Array.isArray(input.options) ? input.options : String(input.options || '').split(',');
   const options = sourceOptions.map(option => String(option).trim()).filter(Boolean);
   if (!options.length || options.length > 12 || options.some(option => option.length > 80)) throw clientError('상품 옵션을 1~12개 입력해 주세요.');
@@ -395,10 +396,10 @@ function productInput(input, current = {}, create = false) {
   const designArea = productDesignArea(input, current);
   const visible = input.visible !== false;
   const sortOrder = Number.isInteger(Number(input.sortOrder)) ? Math.max(0, Math.min(9999, Number(input.sortOrder))) : (Number.isInteger(current.sortOrder) ? current.sortOrder : 0);
-  return {id, name, tag, price, options, mm, color, category, thumbnailImage, detailImage, studioImage, designArea, visible, sortOrder};
+  return {id, name, tag, price, shippingFee, options, mm, color, category, thumbnailImage, detailImage, studioImage, designArea, visible, sortOrder};
 }
 async function saveCatalogProduct(product) {
-  const now = isoNow(), body = {id: product.id, name: product.name, tag: product.tag, price: product.price, options: product.options, mm: product.mm, color: product.color, category: product.category, thumbnailImage: product.thumbnailImage, detailImage: product.detailImage, studioImage: product.studioImage, designArea: product.designArea};
+  const now = isoNow(), body = {id: product.id, name: product.name, tag: product.tag, price: product.price, shippingFee: product.shippingFee, options: product.options, mm: product.mm, color: product.color, category: product.category, thumbnailImage: product.thumbnailImage, detailImage: product.detailImage, studioImage: product.studioImage, designArea: product.designArea};
   if (!useSupabase) db.prepare('INSERT INTO catalog_products(id,body,visible,sortOrder,createdAt,updatedAt) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body,visible=excluded.visible,sortOrder=excluded.sortOrder,updatedAt=excluded.updatedAt').run(product.id, JSON.stringify(body), product.visible ? 1 : 0, product.sortOrder, now, now);
   else databaseError((await supabase.from('catalog_products').upsert({id: product.id, body, visible: product.visible, sort_order: product.sortOrder, updated_at: now}, {onConflict: 'id'})).error);
   return (await listCatalogProducts(true)).find(item => item.id === product.id);

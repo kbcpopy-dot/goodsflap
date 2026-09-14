@@ -143,3 +143,5 @@ input[type=email],textarea{font-family:inherit}input[type=email]{width:100%;padd
 @media(max-width:600px){.order-item-row{grid-template-columns:1fr auto}.order-item-row label{grid-column:1}.order-item-row .text-button{grid-column:2;grid-row:1/3}}
 
 .phone-format-hint{margin:7px 0 0}
+
+.product-price-summary{margin:10px 0 0;padding:10px 12px;border:1px solid #d5cfca;border-radius:10px;background:#fff;font-size:12px;font-weight:800}.admin-product-card .admin-product-total{color:var(--ink);font-size:11px;font-weight:700}

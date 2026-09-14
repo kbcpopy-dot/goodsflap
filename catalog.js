@@ -19,10 +19,11 @@ export function validateItem(item, catalog=products){
  if(!Number.isInteger(item.quantity)||item.quantity<1||item.quantity>100) throw Error('수량은 1~100개입니다.');
  const t=item.transform;
  if(!t || !['x','y','scale','rotation'].every(k=>Number.isFinite(t[k])) || Math.abs(t.x)>.5 || Math.abs(t.y)>.5 || t.scale<.1 || t.scale>2 || Math.abs(t.rotation)>180) throw Error('디자인 배치 값이 올바르지 않습니다.');
- return {...item,name:p.name,unitPrice:p.price,mm:p.mm,schemaVersion:1};
+ return {...item,name:p.name,unitPrice:p.price,shippingFee:Number.isInteger(p.shippingFee) ? p.shippingFee : 3000,mm:p.mm,schemaVersion:1};
 }
 
 export function totals(items){
  const subtotal=items.reduce((s,i)=>s+i.unitPrice*i.quantity,0);
- return {subtotal,shipping:subtotal>=50000?0:3000,amount:subtotal+(subtotal>=50000?0:3000)};
+ const shipping=subtotal>=50000?0:Math.max(0,...items.map(item=>Number.isInteger(item.shippingFee) ? item.shippingFee : 3000));
+ return {subtotal,shipping,amount:subtotal+shipping};
 }
