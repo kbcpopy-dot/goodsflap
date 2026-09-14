@@ -360,7 +360,17 @@ async function countAdmins() {
   const {count, error} = await supabase.from('members').select('*', {count: 'exact', head: true}).eq('role', 'admin').eq('status', 'active'); databaseError(error); return count || 0;
 }
 
-const productCategories = new Set(['paper', 'keyring', 'table', 'wearable', 'frame', 'light', 'other']);
+const defaultCategoryDefinitions = [
+  {id:'paper', name:'엽서 · 스티커', label:'PAPER GOODS'},
+  {id:'keyring', name:'키링 · 배지', label:'KEYRINGS'},
+  {id:'table', name:'머그 · 텀블러', label:'MUGS & TUMBLERS'},
+  {id:'wearable', name:'티셔츠 · 에코백', label:'WEARABLES'},
+  {id:'frame', name:'액자 · 패브릭', label:'HOME & FRAME'},
+  {id:'light', name:'조명 · 가습기', label:'MOOD & HOME'},
+  {id:'other', name:'기타', label:'GOODS'}
+].map((category, sortOrder) => ({...category, sortOrder, visible:true}));
+const defaultProductCategoryIds = new Set(defaultCategoryDefinitions.map(category => category.id));
+const categoryRowPrefix = 'category--';
 const defaultCategories = {postcard:'paper', sticker:'paper', keyring:'keyring', mug:'table', tumbler:'table', tee:'wearable', bag:'wearable', frame:'frame', cushion:'frame', 'glow-light':'light', 'colorwave-light':'light', humidifier:'light', diffuser:'light'};
 function productMediaField(value, label, fallback = '') {
   const url = typeof value === 'string' ? value.trim() : fallback;
@@ -388,14 +398,17 @@ async function catalogRows() {
   const {data: rows, error} = await supabase.from('catalog_products').select('*').order('sort_order', {ascending: true}).order('id', {ascending: true});
   databaseError(error); catalogRowCache = rows.map(decodeProduct); return catalogRowCache;
 }
-async function listCatalogProducts(includeHidden = false) {
-  let rows;
-  try { rows = await catalogRows(); }
+async function resilientCatalogRows() {
+  try { return await catalogRows(); }
   catch (error) {
     if (!useSupabase || error.status !== 500) throw error;
     console.warn('catalog: Supabase 조회 실패, 최근 상품 정보 또는 기본 상품 정보를 사용합니다.');
-    rows = catalogRowCache;
+    return catalogRowCache;
   }
+}
+const isCategoryRow = row => row.kind === 'category' || row.id.startsWith(categoryRowPrefix);
+async function listCatalogProducts(includeHidden = false, sourceRows = null) {
+  const rows = (sourceRows || await resilientCatalogRows()).filter(row => !isCategoryRow(row));
   const overrides = new Map(rows.map(product => [product.id, product]));
   const result = defaultProducts.map((product, index) => {
     const override = overrides.get(product.id); if (override) overrides.delete(product.id);
@@ -404,7 +417,38 @@ async function listCatalogProducts(includeHidden = false) {
   result.push(...overrides.values());
   return result.filter(product => includeHidden || product.visible !== false).sort((a, b) => (a.sortOrder - b.sortOrder) || a.name.localeCompare(b.name, 'ko'));
 }
-function productInput(input, current = {}, create = false) {
+async function listCatalogCategories(includeHidden = false, sourceRows = null) {
+  const categoryRows = (sourceRows || await resilientCatalogRows()).filter(isCategoryRow);
+  const overrides = new Map(categoryRows.map(row => [row.categoryId || row.id.slice(categoryRowPrefix.length), row]));
+  const result = defaultCategoryDefinitions.map(category => {
+    const override = overrides.get(category.id); if (override) overrides.delete(category.id);
+    return {...category, ...(override || {}), id:category.id, visible:override?.visible ?? true};
+  });
+  result.push(...[...overrides.entries()].map(([id, category]) => ({...category, id})));
+  return result.filter(category => includeHidden || category.visible !== false).sort((a, b) => (a.sortOrder - b.sortOrder) || a.name.localeCompare(b.name, 'ko'));
+}
+function categoryInput(input, current = {}, create = false) {
+  const requestedId = typeof input.id === 'string' ? input.id.trim().toLowerCase() : '';
+  const id = create ? requestedId : current.id;
+  if (!/^[a-z0-9][a-z0-9-]{1,29}$/.test(id)) throw clientError('카테고리 코드는 영문 소문자, 숫자, 하이픈 2~30자로 입력해 주세요.');
+  const name = safeText(input.name, '카테고리명', 1, 30);
+  const label = safeText(input.label || name, '영문 표기', 1, 40).toUpperCase();
+  const sortOrder = Number.isInteger(Number(input.sortOrder)) ? Math.max(0, Math.min(999, Number(input.sortOrder))) : (Number.isInteger(current.sortOrder) ? current.sortOrder : 0);
+  return {id, name, label, sortOrder, visible:true};
+}
+async function saveCatalogCategory(category) {
+  const now = isoNow(), rowId = categoryRowPrefix + category.id, body = {kind:'category', categoryId:category.id, name:category.name, label:category.label};
+  if (!useSupabase) db.prepare('INSERT INTO catalog_products(id,body,visible,sortOrder,createdAt,updatedAt) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body,visible=excluded.visible,sortOrder=excluded.sortOrder,updatedAt=excluded.updatedAt').run(rowId, JSON.stringify(body), category.visible === false ? 0 : 1, category.sortOrder, now, now);
+  else databaseError((await supabase.from('catalog_products').upsert({id:rowId, body, visible:category.visible !== false, sort_order:category.sortOrder, updated_at:now}, {onConflict:'id'})).error);
+  return (await listCatalogCategories(true)).find(item => item.id === category.id);
+}
+async function removeCatalogCategory(category) {
+  const rowId = categoryRowPrefix + category.id;
+  if (defaultProductCategoryIds.has(category.id)) return saveCatalogCategory({...category, visible:false});
+  if (!useSupabase) db.prepare('DELETE FROM catalog_products WHERE id=?').run(rowId);
+  else databaseError((await supabase.from('catalog_products').delete().eq('id', rowId)).error);
+}
+function productInput(input, current = {}, create = false, validCategories = defaultProductCategoryIds) {
   const requestedId = typeof input.id === 'string' ? input.id.trim().toLowerCase() : '';
   const id = create ? (requestedId || `goods-${randomBytes(5).toString('hex')}`) : current.id;
   if (!/^[a-z0-9][a-z0-9-]{2,49}$/.test(id)) throw clientError('상품 코드에는 영문 소문자, 숫자, 하이픈만 사용할 수 있습니다.');
@@ -415,10 +459,10 @@ function productInput(input, current = {}, create = false) {
   const options = sourceOptions.map(option => String(option).trim()).filter(Boolean);
   if (!options.length || options.length > 12 || options.some(option => option.length > 80)) throw clientError('상품 옵션을 1~12개 입력해 주세요.');
   const mm = Array.isArray(input.mm) ? input.mm.map(Number) : [Number(input.printWidth), Number(input.printHeight)];
-  if (mm.length !== 2 || mm.some(value => !Number.isInteger(value) || value < 10 || value > 2000)) throw clientError('인쇄 규격을 확인해 주세요.');
+  if (mm.length !== 2 || mm.some(value => !Number.isInteger(value) || value < 10 || value > 2000)) throw clientError('제품 크기를 확인해 주세요.');
   const color = typeof input.color === 'string' && /^#[0-9a-f]{6}$/i.test(input.color) ? input.color : (current.color || '#e8ded5');
   const category = typeof input.category === 'string' ? input.category : (current.category || 'other');
-  if (!productCategories.has(category)) throw clientError('상품 카테고리를 확인해 주세요.');
+  if (!validCategories.has(category)) throw clientError('상품 카테고리를 확인해 주세요.');
   const thumbnailImage = productMediaField(input.thumbnailImage, '카드 이미지', current.thumbnailImage || current.image || '');
   const detailImage = productMediaField(input.detailImage, '상품정보 이미지', current.detailImage || current.thumbnailImage || current.image || '');
   const studioImage = productMediaField(input.studioImage, '디자인 목업 이미지', current.studioImage || '');
@@ -507,7 +551,10 @@ function requireLegacyAdmin(req, res, next) {
   next();
 }
 
-app.get('/api/catalog', async (_, res) => res.json({products: await listCatalogProducts(), paymentEnabled: enabled, paymentMode: enabled && process.env.TOSS_CLIENT_KEY.startsWith('test_') ? 'test' : 'live', clientKey: enabled ? process.env.TOSS_CLIENT_KEY : null}));
+app.get('/api/catalog', async (_, res) => {
+  const rows = await resilientCatalogRows(), products = await listCatalogProducts(false, rows), categories = await listCatalogCategories(false, rows);
+  res.json({products, categories, paymentEnabled: enabled, paymentMode: enabled && process.env.TOSS_CLIENT_KEY.startsWith('test_') ? 'test' : 'live', clientKey: enabled ? process.env.TOSS_CLIENT_KEY : null});
+});
 app.get('/api/auth/me', (req, res) => {
   if (req.authUnavailable) return res.status(503).json({error: '회원 정보를 잠시 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'});
   if (!req.member || req.member.status !== 'active') return res.status(401).json({member: null});
@@ -621,6 +668,24 @@ app.patch('/api/admin/members/:id', requireAdmin, async (req, res) => {
   res.json({member: publicMember(member)});
 });
 app.get('/api/admin/products', requireAdmin, async (_, res) => res.json(await listCatalogProducts(true)));
+app.get('/api/admin/categories', requireAdmin, async (_, res) => res.json(await listCatalogCategories()));
+app.post('/api/admin/categories', requireAdmin, async (req, res) => {
+  const all = await listCatalogCategories(true), category = categoryInput(req.body, {}, true);
+  const current = all.find(item => item.id === category.id);
+  if (current && current.visible !== false) throw clientError('이미 사용 중인 카테고리 코드입니다.');
+  category.sortOrder = Number.isInteger(Number(req.body.sortOrder)) ? category.sortOrder : all.filter(item => item.visible !== false).length;
+  res.status(201).json({category: await saveCatalogCategory(category)});
+});
+app.patch('/api/admin/categories/:id', requireAdmin, async (req, res) => {
+  const current = (await listCatalogCategories()).find(category => category.id === req.params.id); if (!current) return res.sendStatus(404);
+  res.json({category: await saveCatalogCategory(categoryInput({...req.body, id:current.id}, current, false))});
+});
+app.delete('/api/admin/categories/:id', requireAdmin, async (req, res) => {
+  const current = (await listCatalogCategories()).find(category => category.id === req.params.id); if (!current) return res.sendStatus(404);
+  const assigned = (await listCatalogProducts(true)).filter(product => product.category === current.id);
+  if (assigned.length) throw clientError(`${current.name} 카테고리를 사용하는 상품 ${assigned.length}개의 카테고리를 먼저 변경해 주세요.`);
+  await removeCatalogCategory(current); res.json({ok:true});
+});
 app.post('/api/admin/catalog-media', requireAdmin, async (req, res) => {
   const match = req.body.data?.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/);
   if (!match) throw clientError('PNG, JPG, WebP 이미지를 선택해 주세요.');
@@ -631,14 +696,14 @@ app.post('/api/admin/catalog-media', requireAdmin, async (req, res) => {
   await saveCatalogMedia(id, normalized.data); res.status(201).json({id, url: '/api/catalog-media/' + id, width: normalized.info.width, height: normalized.info.height});
 });
 app.post('/api/admin/products', requireAdmin, async (req, res) => {
-  const all = await listCatalogProducts(true), product = productInput(req.body, {}, true);
+  const rows = await resilientCatalogRows(), all = await listCatalogProducts(true, rows), categories = await listCatalogCategories(false, rows), product = productInput(req.body, {}, true, new Set(categories.map(category => category.id)));
   if (all.some(item => item.id === product.id)) throw clientError('이미 사용 중인 상품 코드입니다.');
   product.sortOrder = Number.isInteger(Number(req.body.sortOrder)) ? product.sortOrder : all.length;
   res.status(201).json({product: await saveCatalogProduct(product)});
 });
 app.patch('/api/admin/products/:id', requireAdmin, async (req, res) => {
   const current = (await listCatalogProducts(true)).find(product => product.id === req.params.id); if (!current) return res.sendStatus(404);
-  const product = productInput({...req.body, id: current.id}, current, false); res.json({product: await saveCatalogProduct(product)});
+  const categories = await listCatalogCategories(), product = productInput({...req.body, id: current.id}, current, false, new Set(categories.map(category => category.id))); res.json({product: await saveCatalogProduct(product)});
 });
 app.get('/api/admin/orders', requireAdmin, async (_, res) => res.json(await listOrders('', '', true)));
 app.patch('/api/admin/orders/:id', requireAdmin, async (req, res) => {
