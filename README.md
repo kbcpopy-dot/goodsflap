@@ -22,7 +22,7 @@ Node.js 24 이상에서 이 폴더를 열고 `npm install`, `npm start`를 실�
 `npm test`: 가격·옵션·수량 검증, 업로드, 세션 격리, 관리자 보호, 시연 주문, 상태 전환, 원본 보존, 출력 픽셀·DPI 확인. 테스트는 3017 포트를 사용합니다.
 
 ## Vercel + Supabase 배포
-Vercel 프로젝트는 이 GitHub 저장소의 루트 디렉터리를 연결합니다. `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_TOKEN`, `PUBLIC_URL`을 Vercel Production 환경변수로 설정합니다. 시크릿 키와 관리자 키는 GitHub 또는 브라우저 코드에 넣지 않습니다. Supabase를 설정하지 않은 로컬 실행은 기존 SQLite `data` 폴더를 계속 사용합니다.
+Vercel 프로젝트는 이 GitHub 저장소의 루트 디렉터리를 연결합니다. `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_TOKEN`을 Vercel 환경변수로 설정합니다. `PUBLIC_URL`은 전용 도메인을 연결할 때 `https://artell.co.kr`로 추가합니다. 시크릿 키와 관리자 키는 GitHub 또는 브라우저 코드에 넣지 않습니다. Supabase를 설정하지 않은 로컬 실행은 기존 SQLite `data` 폴더를 계속 사용합니다.
 
 ## 출시 전 남은 작업
 계정 인증·주문 복구, 상품 단가·옵션 확정, 개인정보·약관·맞춤제작 동의, 토스 계약/테스트, 결제 대사/환불, 배송 연동, 업로드 수명과 삭제 정책, 속도 제한, 백업·관측, 운영 저장소, HTTPS 배포. 현재 프로젝트는 로컬 검증 단계이며 공개 판매 서비스로 배포하지 않았습니다. 도메인·AWS·가비아·메일 DNS는 변경하지 않았습니다.
