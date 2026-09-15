@@ -528,6 +528,11 @@ app.use(async (req, res, next) => {
     res.set('X-Content-Type-Options', 'nosniff'); res.set('Referrer-Policy', 'same-origin'); res.set('Cache-Control', 'no-store');
     const requestOrigin = typeof req.headers.origin === 'string' ? req.headers.origin.replace(/\/$/, '') : '';
     if (req.method !== 'GET' && requestOrigin && !allowedRequestOrigins.has(requestOrigin)) return res.status(403).json({error: '허용되지 않은 요청 출처입니다.'});
+    const publicCatalogRequest = req.method === 'GET' && (req.path === '/api/catalog' || req.path.startsWith('/api/catalog-media/'));
+    if (publicCatalogRequest) {
+      req.sid = ''; req.isSecureCookie = false; req.authUnavailable = false; req.memberSession = null; req.member = null;
+      return next();
+    }
     const secure = (req.headers['x-forwarded-proto'] || req.protocol) === 'https';
     let sid = parseCookie(req, 'artell_session', '[a-f0-9]{64}');
     if (!sid) { sid = randomBytes(32).toString('hex'); res.cookie('artell_session', sid, {httpOnly: true, sameSite: 'lax', secure, maxAge: 30 * 86400000, path: '/'}); }
@@ -565,8 +570,9 @@ function requireLegacyAdmin(req, res, next) {
   next();
 }
 
-app.get('/api/catalog', async (_, res) => {
+app.get('/api/catalog', async (req, res) => {
   const rows = await resilientCatalogRows(), products = await listCatalogProducts(false, rows), categories = await listCatalogCategories(false, rows);
+  res.set('Cache-Control', req.query.fresh === '1' ? 'no-store' : 'public, max-age=30, s-maxage=30, stale-while-revalidate=300');
   res.json({products, categories, paymentEnabled: enabled, paymentMode: enabled && process.env.TOSS_CLIENT_KEY.startsWith('test_') ? 'test' : 'live', clientKey: enabled ? process.env.TOSS_CLIENT_KEY : null});
 });
 app.get('/api/auth/me', (req, res) => {
@@ -661,7 +667,12 @@ app.get('/api/assets/:id', requireMember, async (req, res) => {
 app.post('/api/designs', requireMember, async (req, res) => res.status(201).json({design: await saveMemberDesign(req.member.id, req.sid, req.body)}));
 app.get('/api/designs', requireMember, async (req, res) => res.json(await listSavedDesigns(req.member.id)));
 app.get('/api/catalog-media/:id', async (req, res) => {
-  const image = await readCatalogMedia(req.params.id); if (!image) return res.sendStatus(404); res.type('png').send(image);
+  const image = await readCatalogMedia(req.params.id); if (!image) return res.sendStatus(404);
+  const variants = {card: {width:720, height:720, quality:84}, detail: {width:1200, height:1200, quality:88}}, variant = variants[req.query.variant];
+  res.set('Cache-Control', 'public, max-age=31536000, s-maxage=31536000, immutable');
+  if (!variant) return res.type('png').send(image);
+  const optimized = await sharp(image).rotate().resize({width:variant.width, height:variant.height, fit:'inside', withoutEnlargement:true}).webp({quality:variant.quality, alphaQuality:95}).toBuffer();
+  res.type('webp').send(optimized);
 });
 app.post('/api/orders', requireMember, async (req, res) => {
   const {items, recipient, mode} = req.body;
