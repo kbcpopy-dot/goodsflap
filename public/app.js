@@ -6,6 +6,11 @@ const catalogImageUrl=(url,variant='card')=>/^\/api\/catalog-media\/[0-9a-f-]{36
 const warmedCatalogImages=new Set();
 function warmCatalogImage(url,variant='detail'){const src=catalogImageUrl(url,variant);if(!src||warmedCatalogImages.has(src))return;warmedCatalogImages.add(src);const image=new Image();image.decoding='async';image.src=src;}
 const fallbackCategories=[{id:'paper',name:'엽서 · 스티커',label:'PAPER GOODS'},{id:'keyring',name:'키링 · 배지',label:'KEYRINGS'},{id:'table',name:'머그 · 텀블러',label:'MUGS & TUMBLERS'},{id:'wearable',name:'티셔츠 · 에코백',label:'WEARABLES'},{id:'frame',name:'액자 · 패브릭',label:'HOME & FRAME'},{id:'light',name:'조명 · 가습기',label:'MOOD & HOME'},{id:'other',name:'기타',label:'GOODS'}];
+const catalogCacheKey='goodsflap-catalog-v1';
+function readCatalogCache(){try{const cached=JSON.parse(localStorage.getItem(catalogCacheKey)||'null');return Array.isArray(cached?.products)&&cached.products.length?cached:null;}catch{return null;}}
+function writeCatalogCache(next){try{localStorage.setItem(catalogCacheKey,JSON.stringify(next));}catch{}}
+function catalogSignature(next){try{return JSON.stringify(next);}catch{return '';}}
+function isPublicHomeRoute(){const routeName=location.hash.slice(1).split('/')[0];return !routeName||['home','top','products','shop','guide','making','creators','global'].includes(routeName);}
 let catalog,products,cart=[],cartOwner='';try{const loaded=JSON.parse(localStorage.getItem('artell-cart')||'[]');cart=Array.isArray(loaded)?dedupeCart(loaded):[];if(cart.length!==loaded.length)localStorage.setItem('artell-cart',JSON.stringify(cart));cartOwner=localStorage.getItem('artell-cart-owner')||'';}catch{}
 let editor=null,adminToken='',toastTimer,member=null,pendingHash='';
 function toast(s){$('#toast').textContent=s;$('#toast').style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').style.display='none',4000);}
@@ -168,7 +173,25 @@ async function myPage(){
 }
 
 function route(){editor=null;window.scrollTo(0,0);const h=location.hash.slice(1);if(h.startsWith('studio/'))renderStudio(h.split('/')[1]);else if(h==='cart')cartPage();else if(h==='orders')ordersPage();else if(h==='my-page')myPage();else if(h==='login')authPage('login');else if(h==='signup')authPage('signup');else if(h==='account')accountPage();else if(h==='admin')adminPage();else home();}
-async function init(){try{const [nextCatalog,loadedMember]=await Promise.all([api('/api/catalog'),readMember()]);catalog=nextCatalog;products=catalog.products;cart=cart.filter(i=>products.some(p=>p.id===i.productId)&&Number.isInteger(i.quantity)&&i.quantity>0&&i.quantity<=100);const params=new URLSearchParams(location.search),hashParams=new URLSearchParams(location.hash.startsWith('#')?location.hash.slice(1):''),confirmationToken=hashParams.get('access_token');let nextMember=loadedMember;if(params.get('confirmed')==='1'){if(confirmationToken){try{nextMember=(await api('/api/auth/confirm',{accessToken:confirmationToken})).member;toast('이메일 인증이 완료되었습니다.');history.replaceState(null,'','/#account');}catch(error){nextMember=null;toast(error.message);history.replaceState(null,'','/#login');}}else{nextMember=null;toast('인증 링크를 다시 열어 주세요.');history.replaceState(null,'','/#login');}}setMember(nextMember);if(member)saveCart();if(params.get('payment')==='success'){try{await api('/api/payments/confirm',{orderId:params.get('orderId'),paymentKey:params.get('paymentKey'),amount:Number(params.get('amount'))});cart=[];saveCart();toast('결제가 완료되었습니다.');}catch(e){toast(e.message);}history.replaceState(null,'','/#orders');}else if(params.get('payment')==='fail'){toast(params.get('message')||'결제가 완료되지 않았습니다. 주문에서 다시 시도할 수 있습니다.');history.replaceState(null,'','/#orders');}window.addEventListener('hashchange',route);app.removeAttribute('aria-busy');route();}catch(e){app.removeAttribute('aria-busy');app.innerHTML='<section class="empty"><h2>스튜디오를 연결하지 못했습니다.</h2><p>서버가 실행 중인지 확인하고 새로고침해 주세요.</p></section>';}}
+function applyCatalog(next){catalog=next;products=next.products;cart=cart.filter(item=>products.some(product=>product.id===item.productId)&&Number.isInteger(item.quantity)&&item.quantity>0&&item.quantity<=100);}
+async function init(){
+ const params=new URLSearchParams(location.search),specialEntry=params.has('confirmed')||params.has('payment'),cachedCatalog=readCatalogCache();
+ let renderedSignature='',routerReady=false;
+ const installRouter=()=>{if(routerReady)return;routerReady=true;window.addEventListener('hashchange',route);};
+ if(!specialEntry&&isPublicHomeRoute()&&cachedCatalog){applyCatalog(cachedCatalog);installRouter();app.removeAttribute('aria-busy');home();renderedSignature=catalogSignature(cachedCatalog);}
+ const memberRequest=readMember().then(value=>({value}),error=>({error}));
+ try{
+  const nextCatalog=await api('/api/catalog'),nextSignature=catalogSignature(nextCatalog);
+  applyCatalog(nextCatalog);writeCatalogCache(nextCatalog);installRouter();
+  if(!specialEntry&&isPublicHomeRoute()&&renderedSignature!==nextSignature){app.removeAttribute('aria-busy');home();renderedSignature=nextSignature;}
+  const memberResult=await memberRequest;if(memberResult.error)throw memberResult.error;
+  const hashParams=new URLSearchParams(location.hash.startsWith('#')?location.hash.slice(1):''),confirmationToken=hashParams.get('access_token');let nextMember=memberResult.value;
+  if(params.get('confirmed')==='1'){if(confirmationToken){try{nextMember=(await api('/api/auth/confirm',{accessToken:confirmationToken})).member;toast('이메일 인증이 완료되었습니다.');history.replaceState(null,'','/#account');}catch(error){nextMember=null;toast(error.message);history.replaceState(null,'','/#login');}}else{nextMember=null;toast('인증 링크를 다시 열어 주세요.');history.replaceState(null,'','/#login');}}
+  setMember(nextMember);if(member)saveCart();
+  if(params.get('payment')==='success'){try{await api('/api/payments/confirm',{orderId:params.get('orderId'),paymentKey:params.get('paymentKey'),amount:Number(params.get('amount'))});cart=[];saveCart();toast('결제가 완료되었습니다.');}catch(e){toast(e.message);}history.replaceState(null,'','/#orders');}else if(params.get('payment')==='fail'){toast(params.get('message')||'결제가 완료되지 않았습니다. 주문에서 다시 시도할 수 있습니다.');history.replaceState(null,'','/#orders');}
+  app.removeAttribute('aria-busy');if(specialEntry||!isPublicHomeRoute()||!renderedSignature)route();
+ }catch(e){app.removeAttribute('aria-busy');if(renderedSignature){updateCartCount();return;}app.innerHTML='<section class="empty"><h2>스튜디오를 연결하지 못했습니다.</h2><p>서버가 실행 중인지 확인하고 새로고침해 주세요.</p></section>';}
+}
 init();
 
 
