@@ -197,19 +197,19 @@ init();
 
 function home(){
  const stories={
-  postcard:{label:'PAPER GOODS',badge:'학생 추천',copy:'5,000년 미술사 컬러링에서 태어난 엽서 12종 세트',groups:['paper'],icon:'🖼️'},
-  sticker:{label:'PAPER GOODS',badge:'NEW',copy:'노트와 폰을 작품처럼 바꾸는 컬러 스티커',groups:['paper'],icon:'✨'},
-  keyring:{label:'KEYRINGS',badge:'',copy:'빛과 함께 움직이는 학생 작가의 작은 상징',groups:['keyring'],icon:'🔮'},
-  mug:{label:'BEST TABLEWARE',badge:'BEST',copy:'매일의 첫 장면에 창작의 온기를 더하는 컵',groups:['table'],icon:'☕'},
-  tumbler:{label:'MUGS & TUMBLERS',badge:'NEW',copy:'작은 응원과 메시지를 담아 매일 들고 다니는 텀블러',groups:['table'],icon:'✦'},
-  tee:{label:'WEARABLES',badge:'',copy:'학생 작품을 입고 다니는 가장 솔직한 컬렉션',groups:['wearable'],icon:'👕'},
-  bag:{label:'DAILY GOODS',badge:'',copy:'가볍게 들고 오래 쓰는 캠퍼스 아트백',groups:['wearable'],icon:'👜'},
-  frame:{label:'HOME & FRAME',badge:'',copy:'작품과 사진을 함께 놓는 책상 위 갤러리',groups:['frame'],icon:'🖼️'},
-  cushion:{label:'FABRIC GOODS',badge:'LIMITED',copy:'작품 속 구름을 포근한 쉼으로 만든 쿠션',groups:['frame'],icon:'🧸'},
-  'glow-light':{label:'MOOD LIGHT',badge:'NEW',copy:'학생 일러스트가 밤을 여는 은은한 무드 조명',groups:['light'],icon:'💡'},
- 'colorwave-light':{label:'MOOD LIGHT',badge:'',copy:'작품의 색을 그대로 옮긴 24색 무드 라이트',groups:['light'],icon:'🕯️'},
- humidifier:{label:'HOME CARE',badge:'NEW',copy:'작가의 페인팅이 감싸는 초음파 가습기',groups:['light'],icon:'☁️'},
- diffuser:{label:'HOME CARE',badge:'',copy:'작품의 계절 향을 담은 우드베이스 디퓨저',groups:['light'],icon:'🎈'}
+  postcard:{label:'PAPER GOODS',copy:'5,000년 미술사 컬러링에서 태어난 엽서 12종 세트',groups:['paper'],icon:'🖼️'},
+  sticker:{label:'PAPER GOODS',copy:'노트와 폰을 작품처럼 바꾸는 컬러 스티커',groups:['paper'],icon:'✨'},
+  keyring:{label:'KEYRINGS',copy:'빛과 함께 움직이는 학생 작가의 작은 상징',groups:['keyring'],icon:'🔮'},
+  mug:{label:'BEST TABLEWARE',copy:'매일의 첫 장면에 창작의 온기를 더하는 컵',groups:['table'],icon:'☕'},
+  tumbler:{label:'MUGS & TUMBLERS',copy:'작은 응원과 메시지를 담아 매일 들고 다니는 텀블러',groups:['table'],icon:'✦'},
+  tee:{label:'WEARABLES',copy:'학생 작품을 입고 다니는 가장 솔직한 컬렉션',groups:['wearable'],icon:'👕'},
+  bag:{label:'DAILY GOODS',copy:'가볍게 들고 오래 쓰는 캠퍼스 아트백',groups:['wearable'],icon:'👜'},
+  frame:{label:'HOME & FRAME',copy:'작품과 사진을 함께 놓는 책상 위 갤러리',groups:['frame'],icon:'🖼️'},
+  cushion:{label:'FABRIC GOODS',copy:'작품 속 구름을 포근한 쉼으로 만든 쿠션',groups:['frame'],icon:'🧸'},
+  'glow-light':{label:'MOOD LIGHT',copy:'학생 일러스트가 밤을 여는 은은한 무드 조명',groups:['light'],icon:'💡'},
+  'colorwave-light':{label:'MOOD LIGHT',copy:'작품의 색을 그대로 옮긴 24색 무드 라이트',groups:['light'],icon:'🕯️'},
+  humidifier:{label:'HOME CARE',copy:'작가의 페인팅이 감싸는 초음파 가습기',groups:['light'],icon:'☁️'},
+  diffuser:{label:'HOME CARE',copy:'작품의 계절 향을 담은 우드베이스 디퓨저',groups:['light'],icon:'🎈'}
  };
  const categories=catalog.categories?.length?catalog.categories:fallbackCategories,categoryLabels=Object.fromEntries(categories.map(category=>[category.id,category.label]));
  const categoryButtons=categories.filter(category=>category.id!=='other').map(category=>`<button class="catalog-filter" data-catalog-filter="${esc(category.id)}" aria-pressed="false">${esc(category.name)}</button>`).join('');
@@ -219,7 +219,7 @@ function home(){
  const searchable=(p.name+' '+story.label+' '+story.copy).toLowerCase();
   const thumbnailImage=p.thumbnailImage||p.image||'';
   return '<article class="source-product-card product-'+esc(p.id)+'" data-catalog-card data-groups="'+story.groups.join(' ')+'" data-search="'+esc(searchable)+'">'+
-   '<button type="button" class="product-visual product-quick-trigger" style="background:'+esc(p.color||'#e8ded5')+'" data-product-info="'+esc(p.id)+'" aria-label="'+esc(p.name)+' 상품 정보 보기">'+(story.badge?'<span class="product-kicker">'+esc(story.badge)+'</span>':'')+'<span class="product-spark" aria-hidden="true">✦</span>'+(thumbnailImage?'<img class="product-photo" src="'+esc(catalogImageUrl(thumbnailImage,'card'))+'" alt="'+esc(p.name)+' 제품 사진" loading="lazy" decoding="async" width="720" height="720">':'<canvas id="card-'+esc(p.id)+'" aria-hidden="true"></canvas>')+'</button>'+
+   '<button type="button" class="product-visual product-quick-trigger" style="background:'+esc(p.color||'#e8ded5')+'" data-product-info="'+esc(p.id)+'" aria-label="'+esc(p.name)+' 상품 정보 보기"><span class="product-spark" aria-hidden="true">✦</span>'+(thumbnailImage?'<img class="product-photo" src="'+esc(catalogImageUrl(thumbnailImage,'card'))+'" alt="'+esc(p.name)+' 제품 사진" loading="lazy" decoding="async" width="720" height="720">':'<canvas id="card-'+esc(p.id)+'" aria-hidden="true"></canvas>')+'</button>'+
    '<div class="product-info"><span>'+esc(story.label)+'</span><h3>'+esc(p.name)+'</h3><p>'+esc(story.copy)+'</p><small class="product-option">'+esc(p.options[0])+'</small><strong>'+money(p.price)+'</strong></div></article>';
  }).join('');
  app.innerHTML=
