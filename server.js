@@ -158,6 +158,19 @@ async function readCatalogMedia(id) {
   if (error?.statusCode === 404 || error?.statusCode === '404') return null;
   storageError(error); return Buffer.from(await file.arrayBuffer());
 }
+async function saveCatalogMediaVariant(id, variant, image) {
+  const name = `${id}-${variant}.webp`;
+  if (!useSupabase) { const directory = path.join(data, 'catalog-media'); mkdirSync(directory, {recursive: true}); writeFileSync(path.join(directory, name), image); return; }
+  storageError((await supabase.storage.from('catalog-media').upload(name, image, {contentType:'image/webp', upsert:true})).error);
+}
+async function readCatalogMediaVariant(id, variant) {
+  if (!catalogMediaIdPattern.test(id) || !['card','detail'].includes(variant)) return null;
+  const name = `${id}-${variant}.webp`;
+  if (!useSupabase) { const file = path.join(data, 'catalog-media', name); return existsSync(file) ? readFileSync(file) : null; }
+  const {data:file,error} = await supabase.storage.from('catalog-media').download(name);
+  if (error?.statusCode === 404 || error?.statusCode === '404') return null;
+  storageError(error); return Buffer.from(await file.arrayBuffer());
+}
 async function insertOrder(row) {
   if (!useSupabase) { db.prepare('INSERT INTO orders(id,session,memberId,body,status,paymentKey,createdAt) VALUES(?,?,?,?,?,?,?)').run(row.id, row.session, row.memberId || null, JSON.stringify(row.body), row.status, null, row.createdAt); return; }
   databaseError((await supabase.from('orders').insert({id: row.id, session_hash: row.session, member_id: row.memberId || null, body: row.body, status: row.status, created_at: row.createdAt})).error);
@@ -667,11 +680,16 @@ app.get('/api/assets/:id', requireMember, async (req, res) => {
 app.post('/api/designs', requireMember, async (req, res) => res.status(201).json({design: await saveMemberDesign(req.member.id, req.sid, req.body)}));
 app.get('/api/designs', requireMember, async (req, res) => res.json(await listSavedDesigns(req.member.id)));
 app.get('/api/catalog-media/:id', async (req, res) => {
-  const image = await readCatalogMedia(req.params.id); if (!image) return res.sendStatus(404);
-  const variants = {card: {width:720, height:720, quality:84}, detail: {width:1200, height:1200, quality:88}}, variant = variants[req.query.variant];
+  const variants = {card: {width:720, height:720, quality:84}, detail: {width:1200, height:1200, quality:88}}, variantName = typeof req.query.variant === 'string' ? req.query.variant : '', variant = variants[variantName];
+  if (variantName && !variant) throw clientError('이미지 크기 옵션을 확인해 주세요.');
   res.set('Cache-Control', 'public, max-age=31536000, s-maxage=31536000, immutable');
-  if (!variant) return res.type('png').send(image);
-  const optimized = await sharp(image).rotate().resize({width:variant.width, height:variant.height, fit:'inside', withoutEnlargement:true}).webp({quality:variant.quality, alphaQuality:95}).toBuffer();
+  if (!variant) { const image = await readCatalogMedia(req.params.id); return image ? res.type('png').send(image) : res.sendStatus(404); }
+  let optimized = await readCatalogMediaVariant(req.params.id, variantName);
+  if (!optimized) {
+    const image = await readCatalogMedia(req.params.id); if (!image) return res.sendStatus(404);
+    optimized = await sharp(image).rotate().resize({width:variant.width, height:variant.height, fit:'inside', withoutEnlargement:true}).webp({quality:variant.quality, alphaQuality:95}).toBuffer();
+    try { await saveCatalogMediaVariant(req.params.id, variantName, optimized); } catch (error) { console.warn('catalog media: 최적화 이미지를 저장하지 못해 현재 응답에만 사용합니다.', error.message); }
+  }
   res.type('webp').send(optimized);
 });
 app.post('/api/orders', requireMember, async (req, res) => {
@@ -751,7 +769,12 @@ app.post('/api/admin/catalog-media', requireAdmin, async (req, res) => {
   const meta = await sharp(bytes, {limitInputPixels: 40000000}).metadata();
   if (!['png', 'jpeg', 'webp'].includes(meta.format) || meta.pages > 1) throw clientError('정지 이미지만 사용할 수 있습니다.');
   const id = randomUUID(), normalized = await sharp(bytes).rotate().png().toBuffer({resolveWithObject: true});
-  await saveCatalogMedia(id, normalized.data); res.status(201).json({id, url: '/api/catalog-media/' + id, width: normalized.info.width, height: normalized.info.height});
+  const [card, detail] = await Promise.all([
+    sharp(normalized.data).resize({width:720,height:720,fit:'inside',withoutEnlargement:true}).webp({quality:84,alphaQuality:95}).toBuffer(),
+    sharp(normalized.data).resize({width:1200,height:1200,fit:'inside',withoutEnlargement:true}).webp({quality:88,alphaQuality:95}).toBuffer()
+  ]);
+  await Promise.all([saveCatalogMedia(id, normalized.data), saveCatalogMediaVariant(id, 'card', card), saveCatalogMediaVariant(id, 'detail', detail)]);
+  res.status(201).json({id, url: '/api/catalog-media/' + id, width: normalized.info.width, height: normalized.info.height});
 });
 app.post('/api/admin/products', requireAdmin, async (req, res) => {
   const rows = await resilientCatalogRows(), all = await listCatalogProducts(true, rows), categories = await listCatalogCategories(false, rows), product = productInput(req.body, {}, true, new Set(categories.map(category => category.id)));
