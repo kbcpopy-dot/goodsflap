@@ -1,3 +1,4 @@
+import {optionPrice} from './public/product-options.js';
 export const products = [
  {id:'postcard',name:'AI 아트 엽서팩',tag:'5,000년 미술사 컬러링에서 태어난 엽서 12종 세트',price:10000,options:['A6 · 10 × 15cm'],mm:[100,150],color:'#f8cde0'},
  {id:'sticker',name:'굿즈플랩 스티커',tag:'노트와 폰을 작품처럼 바꾸는 컬러 스티커',price:4000,options:['90 × 150mm'],mm:[90,150],color:'#cbe7fb'},
@@ -20,7 +21,7 @@ export function validateItem(item, catalog=products){
  if(!Number.isInteger(item.quantity)||item.quantity<1||item.quantity>100) throw Error('수량은 1~100개입니다.');
  const t=item.transform;
  if(!t || !['x','y','scale','rotation'].every(k=>Number.isFinite(t[k])) || Math.abs(t.x)>.5 || Math.abs(t.y)>.5 || t.scale<.1 || t.scale>2 || Math.abs(t.rotation)>180) throw Error('디자인 배치 값이 올바르지 않습니다.');
- return {...item,name:p.name,unitPrice:p.price,shippingFee:Number.isInteger(p.shippingFee) ? p.shippingFee : 3000,mm:p.mm,schemaVersion:1};
+ return {...item,name:p.name,unitPrice:optionPrice(p,item.option),shippingFee:Number.isInteger(p.shippingFee) ? p.shippingFee : 3000,mm:p.mm,schemaVersion:1};
 }
 
 export function totals(items){

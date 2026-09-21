@@ -1,4 +1,5 @@
 import express from 'express';
+import {apparelOptions} from './public/product-options.js';
 import {DatabaseSync} from 'node:sqlite';
 import {createHash, randomBytes, randomUUID, scrypt, timingSafeEqual} from 'node:crypto';
 import {promisify} from 'node:util';
@@ -146,7 +147,7 @@ async function readAsset(asset, kind) {
 }
 const catalogMediaIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const catalogMediaUrlPattern = /^\/api\/catalog-media\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const staticCatalogMediaPattern = /^\/media\/[a-z0-9][a-z0-9._-]*\.(?:png|jpe?g|webp)$/i;
+const staticCatalogMediaPattern = /^\/media\/[a-z0-9가-힣][a-z0-9가-힣._-]*\.(?:png|jpe?g|webp)$/i;
 async function saveCatalogMedia(id, image) {
   if (!useSupabase) { const directory = path.join(data, 'catalog-media'); mkdirSync(directory, {recursive: true}); writeFileSync(path.join(directory, id + '.png'), image); return; }
   storageError((await supabase.storage.from('catalog-media').upload(id + '.png', image, {contentType: 'image/png', upsert: false})).error);
@@ -472,6 +473,14 @@ async function removeCatalogCategory(category) {
   if (!useSupabase) db.prepare('DELETE FROM catalog_products WHERE id=?').run(rowId);
   else databaseError((await supabase.from('catalog_products').delete().eq('id', rowId)).error);
 }
+function productApparel(value) {
+ if(!value)return null;
+ if(!Array.isArray(value.colors)||!value.colors.length||value.colors.length>16||!Array.isArray(value.sizes)||!value.sizes.length||value.sizes.length>8)throw clientError('색상과 사이즈 구성을 확인해 주세요.');
+ const colors=value.colors.map(c=>{const name=safeText(c.name,'색상',1,30),crop=c.crop||null;if(name.includes(' · ')||(crop&&(!Array.isArray(crop)||crop.length!==4||crop.some(n=>!Number.isInteger(n)||n<0)||crop[2]<1||crop[3]<1)))throw clientError('색상 이미지 영역을 확인해 주세요.');return {name,crop};});
+ const sizes=value.sizes.map(s=>{const name=safeText(s.name,'사이즈',1,20),extra=Number(s.extra||0);if(name.includes(' · ')||!Number.isInteger(extra)||extra<0||extra>1000000)throw clientError('사이즈 추가금을 확인해 주세요.');return {name,extra};});
+ if(new Set(colors.map(c=>c.name)).size!==colors.length||new Set(sizes.map(s=>s.name)).size!==sizes.length)throw clientError('중복된 색상 또는 사이즈입니다.');
+ return {colors,sizes,colorImage:productMediaField(value.colorImage,'색상 이미지')};
+}
 function productInput(input, current = {}, create = false, validCategories = defaultProductCategoryIds) {
   const requestedId = typeof input.id === 'string' ? input.id.trim().toLowerCase() : '';
   const id = create ? (requestedId || `goods-${randomBytes(5).toString('hex')}`) : current.id;
@@ -479,9 +488,10 @@ function productInput(input, current = {}, create = false, validCategories = def
   const name = safeText(input.name, '상품명', 2, 80), tag = safeText(input.tag, '상품 설명', 2, 240), price = Number(input.price), shippingFee = Number(input.shippingFee ?? current.shippingFee ?? 3000);
   if (!Number.isInteger(price) || price < 0 || price > 10000000) throw clientError('상품 가격을 확인해 주세요.');
   if (!Number.isInteger(shippingFee) || shippingFee < 0 || shippingFee > 10000000) throw clientError('상품 배송비를 확인해 주세요.');
-  const sourceOptions = Array.isArray(input.options) ? input.options : String(input.options || '').split(',');
+  const apparel = productApparel(input.apparel ?? current.apparel);
+  const sourceOptions = apparel ? apparelOptions(apparel) : Array.isArray(input.options) ? input.options : String(input.options || '').split(',');
   const options = sourceOptions.map(option => String(option).trim()).filter(Boolean);
-  if (!options.length || options.length > 12 || options.some(option => option.length > 80)) throw clientError('상품 옵션을 1~12개 입력해 주세요.');
+  if (!options.length || options.length > (apparel ? 120 : 12) || options.some(option => option.length > 80)) throw clientError('상품 옵션을 1~12개 입력해 주세요.');
   const mm = Array.isArray(input.mm) ? input.mm.map(Number) : [Number(input.printWidth), Number(input.printHeight)];
   if (mm.length !== 2 || mm.some(value => !Number.isInteger(value) || value < 10 || value > 2000)) throw clientError('제품 크기를 확인해 주세요.');
   const color = typeof input.color === 'string' && /^#[0-9a-f]{6}$/i.test(input.color) ? input.color : (current.color || '#e8ded5');
@@ -493,10 +503,10 @@ function productInput(input, current = {}, create = false, validCategories = def
   const designArea = productDesignArea(input, current);
   const visible = input.visible !== false;
   const sortOrder = Number.isInteger(Number(input.sortOrder)) ? Math.max(0, Math.min(9999, Number(input.sortOrder))) : (Number.isInteger(current.sortOrder) ? current.sortOrder : 0);
-  return {id, name, tag, price, shippingFee, options, mm, color, category, thumbnailImage, detailImage, studioImage, designArea, visible, sortOrder};
+  return {id, name, tag, price, shippingFee, options, apparel, mm, color, category, thumbnailImage, detailImage, studioImage, designArea, visible, sortOrder};
 }
 async function saveCatalogProduct(product) {
-  const now = isoNow(), body = {id: product.id, name: product.name, tag: product.tag, price: product.price, shippingFee: product.shippingFee, options: product.options, mm: product.mm, color: product.color, category: product.category, thumbnailImage: product.thumbnailImage, detailImage: product.detailImage, studioImage: product.studioImage, designArea: product.designArea, deleted:product.deleted === true};
+  const now = isoNow(), body = {id: product.id, name: product.name, tag: product.tag, price: product.price, shippingFee: product.shippingFee, options: product.options, apparel: product.apparel, mm: product.mm, color: product.color, category: product.category, thumbnailImage: product.thumbnailImage, detailImage: product.detailImage, studioImage: product.studioImage, designArea: product.designArea, deleted:product.deleted === true};
   if (!useSupabase) db.prepare('INSERT INTO catalog_products(id,body,visible,sortOrder,createdAt,updatedAt) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body,visible=excluded.visible,sortOrder=excluded.sortOrder,updatedAt=excluded.updatedAt').run(product.id, JSON.stringify(body), product.visible ? 1 : 0, product.sortOrder, now, now);
   else databaseError((await supabase.from('catalog_products').upsert({id: product.id, body, visible: product.visible, sort_order: product.sortOrder, updated_at: now}, {onConflict: 'id'})).error);
   return (await listCatalogProducts(true)).find(item => item.id === product.id);

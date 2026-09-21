@@ -206,3 +206,5 @@ input[type=email],textarea{font-family:inherit}input[type=email]{width:100%;padd
   .upload input{max-width:100%}
   .workbench .hint{width:100%;overflow-wrap:break-word}
 }
+
+.apparel-options{border:0;padding:0;margin:20px 0}.apparel-options legend{margin-bottom:0}.apparel-options .field{margin-top:12px}.apparel-options select{min-height:44px}

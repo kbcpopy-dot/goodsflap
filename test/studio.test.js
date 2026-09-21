@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {mkdtempSync} from 'node:fs';
+import {mkdtempSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import sharp from 'sharp';
@@ -77,6 +77,14 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   response=await request('/api/orders',{method:'POST',cookie:authCookie,body:{items:[{...item,quantity:1}],recipient:{name:'테스트',phone:'01000000000',address:'테스트용 주소'},consent:true,mode:'demo'}});assert.equal(response.status,200);const deletableOrder=await response.json();
   response=await request('/api/orders/'+deletableOrder.id+'/items',{method:'PATCH',cookie:authCookie,body:{items:[]}});assert.equal(response.status,200);assert.equal((await response.json()).deleted,true);
   response=await request('/api/orders',{method:'POST',cookie:authCookie,body:{items:[{...item,quantity:0}],recipient:{name:'테스트',phone:'01000000000',address:'테스트용 주소'},consent:true,mode:'demo'}});assert.equal(response.status,400);
+  const shirt=JSON.parse(readFileSync(new URL('../tools/premium-long-sleeve.json',import.meta.url),'utf8'));
+  response=await request('/api/admin/products',{method:'POST',cookie:authCookie,body:shirt});assert.equal(response.status,201,await response.clone().text());const createdShirt=(await response.json()).product;assert.equal(createdShirt.options.length,44);assert.ok(!createdShirt.options.some(o=>o.includes('2XL')));
+  response=await request('/api/admin/products/'+shirt.id,{method:'PATCH',cookie:authCookie,body:{...createdShirt,apparel:undefined,price:28000}});assert.equal(response.status,200);assert.equal((await response.json()).product.apparel.colors.length,11);
+  const shirtItem={...item,productId:shirt.id,option:'네이비 · XL',quantity:1};
+  response=await request('/api/designs',{method:'POST',cookie:authCookie,body:shirtItem});assert.equal(response.status,201);assert.equal((await response.json()).design.option,'네이비 · XL');
+  response=await request('/api/orders',{method:'POST',cookie:authCookie,body:{items:[shirtItem],recipient:{name:'테스트',phone:'01000000000',address:'테스트용 주소'},consent:true,mode:'demo'}});assert.equal(response.status,200);const shirtOrder=await response.json();assert.equal(shirtOrder.amount,31000);assert.equal(shirtOrder.items[0].unitPrice,28000);assert.equal(shirtOrder.items[0].option,'네이비 · XL');
+  response=await request('/api/admin/orders/'+shirtOrder.id+'/files/0/print',{cookie:authCookie});assert.equal(response.status,200);const shirtPrint=await sharp(Buffer.from(await response.arrayBuffer())).metadata();assert.equal(shirtPrint.width,2480);assert.equal(shirtPrint.height,3508);
+  assert.throws(()=>validateItem({...shirtItem,option:'화이트 · 2XL'},[createdShirt]));
   response=await request('/api/auth/logout',{method:'POST',cookie:authCookie,body:{}});assert.equal(response.status,200);
   response=await request('/api/auth/signup',{method:'POST',cookie:anonCookie,body:{name:'다른 회원',email:'other@example.com',phone:'01011112222',password:'safe-password-456'}});assert.equal(response.status,201);
   const otherMemberCookie=cookieFrom(response,'goodsflap_member'),otherAuthCookie=anonCookie+'; '+otherMemberCookie;
