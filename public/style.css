@@ -191,3 +191,18 @@ input[type=email],textarea{font-family:inherit}input[type=email]{width:100%;padd
   .studio-panel .sub{font-size:17px}.studio-panel>strong small,.upload small{font-size:14px}.hint{font-size:15px}
   .auth-card>p,.account-heading p,.admin-heading p,.admin-panel-head p,.my-page-heading>p{font-size:17px}
 }
+
+/* Touch scrolling stays available until the user explicitly starts moving artwork. */
+.workbench canvas{touch-action:pan-y pinch-zoom}
+.workbench canvas.is-touch-moving{touch-action:none}
+.studio>*{min-width:0}
+.studio-upload-jump{display:none}
+#upload-heading{scroll-margin-top:220px}
+#touch-move[aria-pressed="true"]{background:var(--ink);color:white}
+@media(max-width:800px){
+  .studio{grid-template-columns:minmax(0,1fr)}
+  .studio-upload-jump{display:flex;width:100%;margin-bottom:14px}
+  .studio-panel{min-width:0}
+  .upload input{max-width:100%}
+  .workbench .hint{width:100%;overflow-wrap:break-word}
+}
