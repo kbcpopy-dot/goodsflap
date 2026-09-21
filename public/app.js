@@ -6,7 +6,9 @@ const catalogImageUrl=(url,variant='card')=>/^\/api\/catalog-media\/[0-9a-f-]{36
 const warmedCatalogImages=new Set();
 function warmCatalogImage(url,variant='detail'){const src=catalogImageUrl(url,variant);if(!src||warmedCatalogImages.has(src))return;warmedCatalogImages.add(src);const image=new Image();image.decoding='async';image.src=src;}
 const fallbackCategories=[{id:'paper',name:'엽서 · 스티커',label:'PAPER GOODS'},{id:'keyring',name:'키링 · 배지',label:'KEYRINGS'},{id:'table',name:'머그 · 텀블러',label:'MUGS & TUMBLERS'},{id:'wearable',name:'티셔츠 · 에코백',label:'WEARABLES'},{id:'frame',name:'액자 · 패브릭',label:'HOME & FRAME'},{id:'light',name:'조명 · 가습기',label:'MOOD & HOME'},{id:'other',name:'기타',label:'GOODS'}];
-const catalogCacheKey='goodsflap-catalog-v1';
+const catalogCacheKey='goodsflap-catalog-v2';
+try{localStorage.removeItem('goodsflap-catalog-v1');}catch{}
+async function fetchInitialCatalog(){for(let attempt=0;attempt<3;attempt++){try{return await api('/api/catalog?fresh=1');}catch(error){if(attempt===2)throw error;await new Promise(resolve=>setTimeout(resolve,600*(attempt+1)));}}}
 function readCatalogCache(){try{const cached=JSON.parse(localStorage.getItem(catalogCacheKey)||'null');return Array.isArray(cached?.products)&&cached.products.length?cached:null;}catch{return null;}}
 function writeCatalogCache(next){try{localStorage.setItem(catalogCacheKey,JSON.stringify(next));}catch{}}
 function catalogSignature(next){try{return JSON.stringify(next);}catch{return '';}}
@@ -184,7 +186,7 @@ async function init(){
  if(!specialEntry&&isPublicHomeRoute()&&cachedCatalog){applyCatalog(cachedCatalog);installRouter();app.removeAttribute('aria-busy');home();renderedSignature=catalogSignature(cachedCatalog);}
  const memberRequest=readMember().then(value=>({value}),error=>({error}));
  try{
-  const nextCatalog=await api('/api/catalog'),nextSignature=catalogSignature(nextCatalog);
+  const nextCatalog=await fetchInitialCatalog(),nextSignature=catalogSignature(nextCatalog);
   applyCatalog(nextCatalog);writeCatalogCache(nextCatalog);installRouter();
   if(!specialEntry&&isPublicHomeRoute()&&renderedSignature!==nextSignature){app.removeAttribute('aria-busy');home();renderedSignature=nextSignature;}
   const memberResult=await memberRequest;if(memberResult.error)throw memberResult.error;
@@ -193,7 +195,7 @@ async function init(){
   setMember(nextMember);if(member)saveCart();
   if(params.get('payment')==='success'){try{await api('/api/payments/confirm',{orderId:params.get('orderId'),paymentKey:params.get('paymentKey'),amount:Number(params.get('amount'))});cart=[];saveCart();toast('결제가 완료되었습니다.');}catch(e){toast(e.message);}history.replaceState(null,'','/#orders');}else if(params.get('payment')==='fail'){toast(params.get('message')||'결제가 완료되지 않았습니다. 주문에서 다시 시도할 수 있습니다.');history.replaceState(null,'','/#orders');}
   app.removeAttribute('aria-busy');if(specialEntry||!isPublicHomeRoute()||!renderedSignature)route();
- }catch(e){app.removeAttribute('aria-busy');if(renderedSignature){updateCartCount();return;}app.innerHTML='<section class="empty"><h2>스튜디오를 연결하지 못했습니다.</h2><p>서버가 실행 중인지 확인하고 새로고침해 주세요.</p></section>';}
+ }catch(e){app.removeAttribute('aria-busy');if(renderedSignature){updateCartCount();return;}app.innerHTML='<section class="empty"><h2>상품 정보를 불러오지 못했습니다.</h2><p>잠시 후 다시 시도해 주세요.</p><button class="primary" id="retry-catalog">다시 불러오기</button></section>';$('#retry-catalog').onclick=()=>init();}
 }
 init();
 

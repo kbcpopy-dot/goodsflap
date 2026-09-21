@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {createServer} from 'node:http';
 
-test('Supabase가 일시적으로 502를 반환해도 공개 상품 목록을 제공한다', async () => {
-  let attempts = 0;
+test('상품 조회 실패 시 기본 상품을 노출하지 않고 복구 후 확인한 상품만 재사용한다', async () => {
+  let attempts = 0, failing = true;
   const upstream = createServer((req, res) => {
     if (req.url?.startsWith('/rest/v1/catalog_products')) {
       attempts += 1;
+      if(!failing){res.writeHead(200, {'Content-Type':'application/json'}).end(JSON.stringify([{id:'postcard',visible:true,sort_order:0,body:{name:'현재 아트 엽서',price:3000,thumbnailImage:'/media/current.png'}}]));return;}
       res.writeHead(502, {'Content-Type': 'text/plain'}).end('Bad Gateway');
       return;
     }
@@ -41,9 +42,21 @@ test('Supabase가 일시적으로 502를 반환해도 공개 상품 목록을 �
     });
     const response = await fetch(`http://127.0.0.1:${appPort}/api/catalog`);
     const catalog = await response.json();
-    assert.equal(response.status, 200);
-    assert.equal(catalog.products.length, 13);
+    assert.equal(response.status, 503);
+    assert.equal(catalog.products, undefined);
+    assert.match(response.headers.get("cache-control"), /no-store/);
     assert.equal(attempts, 3);
+    failing=false;
+    const recovered=await fetch(`http://127.0.0.1:${appPort}/api/catalog`);
+    const good=await recovered.json();
+    assert.equal(recovered.status,200);
+    assert.match(recovered.headers.get('cache-control'),/no-store/);
+    assert.equal(good.products.find(p=>p.id==='postcard').price,3000);
+    assert.equal(good.products.find(p=>p.id==='postcard').thumbnailImage,'/media/current.png');
+    failing=true;
+    const warm=await fetch(`http://127.0.0.1:${appPort}/api/catalog`);
+    assert.equal(warm.status,200);
+    assert.deepEqual((await warm.json()).products,good.products);
   } finally {
     child.kill();
     await new Promise(resolve => upstream.close(resolve));

@@ -409,7 +409,7 @@ function decodeProduct(row) {
   const body = typeof row.body === 'string' ? JSON.parse(row.body) : row.body;
   return {...body, id: row.id, visible: row.visible ?? true, sortOrder: row.sortOrder ?? row.sort_order ?? 0};
 }
-let catalogRowCache = [];
+let catalogRowCache = null;
 async function catalogRows() {
   if (!useSupabase) return db.prepare('SELECT * FROM catalog_products ORDER BY sortOrder ASC, id ASC').all().map(decodeProduct);
   const {data: rows, error} = await supabase.from('catalog_products').select('*').order('sort_order', {ascending: true}).order('id', {ascending: true});
@@ -426,7 +426,7 @@ async function resilientCatalogRows() {
   try { return await catalogRows(); }
   catch (error) {
     if (!useSupabase || error.status !== 500) throw error;
-    console.warn('catalog: Supabase 조회 실패, 최근 상품 정보 또는 기본 상품 정보를 사용합니다.');
+    if (catalogRowCache === null) throw clientError('상품 정보를 잠시 불러오지 못했습니다. 다시 시도해 주세요.', 503); console.warn('catalog: Supabase 조회 실패, 마지막으로 확인한 상품 정보를 사용합니다.');
     return catalogRowCache;
   }
 }
@@ -585,7 +585,7 @@ function requireLegacyAdmin(req, res, next) {
 
 app.get('/api/catalog', async (req, res) => {
   const rows = await resilientCatalogRows(), products = await listCatalogProducts(false, rows), categories = await listCatalogCategories(false, rows);
-  res.set('Cache-Control', req.query.fresh === '1' ? 'no-store' : 'public, max-age=30, s-maxage=30, stale-while-revalidate=300');
+  res.set('Cache-Control', 'no-store');
   res.json({products, categories, paymentEnabled: enabled, paymentMode: enabled && process.env.TOSS_CLIENT_KEY.startsWith('test_') ? 'test' : 'live', clientKey: enabled ? process.env.TOSS_CLIENT_KEY : null});
 });
 app.get('/api/auth/me', (req, res) => {
