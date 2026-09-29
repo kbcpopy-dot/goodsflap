@@ -795,6 +795,20 @@ app.get('/api/admin/summary', requireAdmin, async (_, res) => {
   const members = await listMembers(), orders = await listOrders('', '', true), catalog = await listCatalogProducts(true);
   res.json({members: members.length, orders: orders.length, pending: orders.filter(order => ['pending', 'paid', 'demo', 'production'].includes(order.status)).length, products: catalog.filter(product => product.visible !== false).length});
 });
+app.get('/api/admin/members/:id/uploads',requireAdmin,async(req,res)=>{
+ const member=await findMemberById(req.params.id);if(!member)return res.sendStatus(404);
+ const offset=Number(req.query.offset||0);if(!Number.isSafeInteger(offset)||offset<0)return res.status(400).json({error:'페이지를 확인해 주세요.'});
+ let rows;
+ if(!useSupabase)rows=db.prepare('SELECT id,format,width,height FROM assets WHERE memberId=? ORDER BY rowid DESC LIMIT 51 OFFSET ?').all(req.params.id,offset);
+ else {const result=await supabase.from('assets').select('id,format,width,height,created_at').eq('member_id',req.params.id).order('created_at',{ascending:false}).order('id').range(offset,offset+50);databaseError(result.error);rows=result.data;}
+ res.json({member:publicMember(member),items:rows.slice(0,50).map(row=>({id:row.id,format:row.format,width:row.width,height:row.height,createdAt:row.created_at||null})),nextOffset:rows.length>50?offset+50:null});
+});
+app.get('/api/admin/members/:id/uploads/:assetId/:kind',requireAdmin,async(req,res)=>{
+ if(!['preview','original'].includes(req.params.kind))return res.sendStatus(404);
+ const asset=await findAnyAsset(req.params.assetId);if(!asset||(asset.memberId||asset.member_id)!==req.params.id)return res.sendStatus(404);
+ if(req.params.kind==='original')return res.attachment(`upload-${asset.id}.${asset.format}`).send(await readAsset(asset,'original'));
+ res.type(asset.normalized_path?.endsWith('.webp')?'webp':'png').send(await readAsset(asset,'normalized'));
+});
 app.get('/api/admin/members', requireAdmin, async (_, res) => res.json(await listMembers()));
 app.patch('/api/admin/members/:id', requireAdmin, async (req, res) => {
   const target = await findMemberById(req.params.id); if (!target) return res.sendStatus(404);

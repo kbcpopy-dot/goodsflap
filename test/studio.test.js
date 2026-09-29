@@ -60,6 +60,11 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   assert.equal((await request('/api/admin/orders',{headers:{'X-Admin-Token':'test-admin-only'}})).status,403);
   response=await request('/api/admin/bootstrap',{method:'POST',cookie:authCookie,headers:{'X-Admin-Token':'test-admin-only'},body:{}});assert.equal(response.status,200);assert.equal((await response.json()).member.role,'admin');
   response=await request('/api/admin/carts',{cookie:authCookie});assert.equal(response.status,200);const adminCarts=await response.json();assert.equal(adminCarts.length,1);assert.equal(adminCarts[0].member.email,'member@example.com');assert.equal(adminCarts[0].items[0].quantity,10);assert.equal(adminCarts[0].subtotal,150000);
+  const uploadBase='/api/admin/members/'+signed.member.id+'/uploads';
+  response=await request(uploadBase,{cookie:authCookie});assert.equal(response.status,200);const uploads=await response.json();assert.ok(uploads.items.some(file=>file.id===asset.id));assert.equal(uploads.nextOffset,null);assert.equal(uploads.member.email,'member@example.com');
+  assert.equal((await request(uploadBase+'/'+asset.id+'/preview',{cookie:authCookie})).status,200);
+  response=await request(uploadBase+'/'+asset.id+'/original',{cookie:authCookie});assert.equal(response.status,200);assert.match(response.headers.get('content-disposition'),/attachment/);assert.deepEqual(Buffer.from(await response.arrayBuffer()),image);
+  assert.equal((await request(uploadBase+'?offset=-1',{cookie:authCookie})).status,400);
   const cartAssetUrl='/api/admin/carts/'+signed.member.id+'/assets/'+asset.id;
   assert.equal((await request(cartAssetUrl,{cookie:authCookie})).status,200);
   response=await request('/api/admin/orders',{cookie:authCookie});assert.equal(response.status,200);assert.equal((await response.json()).length,1);
@@ -107,6 +112,9 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   assert.equal((await request('/api/assets/'+asset.id,{cookie:otherAuthCookie})).status,404);
   assert.equal((await request('/api/assets/'+asset.id+'/info',{cookie:otherAuthCookie})).status,404);
   assert.equal((await request('/api/designs/'+savedDesign.id,{method:'PATCH',cookie:otherAuthCookie,body:savedDesign})).status,404);
+  assert.equal((await request(uploadBase,{cookie:otherAuthCookie})).status,403);
+  assert.equal((await request(uploadBase+'/'+asset.id+'/original',{cookie:otherAuthCookie})).status,403);
+  assert.equal((await request(uploadBase+'/'+asset.id+'/preview',{cookie:anonCookie})).status,403);
   assert.equal((await request('/api/admin/carts',{cookie:otherAuthCookie})).status,403);
   assert.equal((await request(cartAssetUrl,{cookie:otherAuthCookie})).status,403);
   response=await request('/api/cart',{cookie:otherAuthCookie});assert.equal((await response.json()).items.length,0);
