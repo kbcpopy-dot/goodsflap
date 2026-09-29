@@ -54,6 +54,8 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   response=await request('/api/cart',{method:'PUT',cookie:authCookie,body:{items:[{...item,quantity:10}],version:cloudCart.version}});assert.equal(response.status,200);const oldCartVersion=cloudCart.version;cloudCart=await response.json();
   response=await request('/api/cart',{method:'PUT',cookie:authCookie,body:{items:[],version:oldCartVersion}});assert.equal(response.status,409);
   response=await request('/api/orders',{method:'POST',cookie:authCookie,body:{items:[item],recipient:{name:'테스트',phone:'01000000000',address:'테스트용 주소'},consent:true,mode:'demo'}});assert.equal(response.status,200);let order=await response.json();assert.equal(order.amount,33000);assert.equal(order.recipient.phone,'010-0000-0000');
+  assert.equal((await request('/api/orders/'+order.id+'/receipt',{cookie:authCookie})).status,400);
+  assert.equal((await request('/api/orders/'+order.id+'/receipt',{cookie:anonCookie})).status,401);
   response=await request('/api/orders/'+order.id+'/items',{method:'PATCH',cookie:authCookie,body:{items:[{...item,quantity:3}]}});assert.equal(response.status,200);order=await response.json();assert.equal(order.amount,48000);assert.equal(order.items[0].quantity,3);
   response=await request('/api/orders',{cookie:authCookie});assert.equal(response.status,200);assert.equal((await response.json()).length,1);assert.equal((await request('/api/orders',{cookie:anonCookie})).status,401);
   assert.equal((await request('/api/admin/orders',{cookie:authCookie})).status,403);
@@ -111,6 +113,7 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   response=await request('/api/auth/logout',{method:'POST',cookie:authCookie,body:{}});assert.equal(response.status,200);
   response=await request('/api/auth/signup',{method:'POST',cookie:anonCookie,body:{name:'다른 회원',email:'other@example.com',phone:'01011112222',password:'safe-password-456'}});assert.equal(response.status,201);
   const otherMemberCookie=cookieFrom(response,'goodsflap_member'),otherAuthCookie=anonCookie+'; '+otherMemberCookie;
+  assert.equal((await request('/api/orders/'+order.id+'/receipt',{cookie:otherAuthCookie})).status,404);
   assert.equal((await request('/api/admin/bootstrap',{method:'POST',cookie:otherAuthCookie,headers:{'X-Admin-Token':'test-admin-only'},body:{}})).status,403);
   assert.equal((await request('/api/assets/'+asset.id,{cookie:otherAuthCookie})).status,404);
   assert.equal((await request('/api/assets/'+asset.id+'/info',{cookie:otherAuthCookie})).status,404);

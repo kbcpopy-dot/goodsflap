@@ -1,3 +1,4 @@
+import {paymentReceipt} from './payment-receipt.js';
 import {createOrderMailer} from './order-email.js';
 import express from 'express';
 import {apparelOptions} from './public/product-options.js';
@@ -782,6 +783,15 @@ app.post('/api/orders/:id/payment', requireMember, async (req, res) => {
 });
 app.patch('/api/orders/:id/items', requireMember, async (req, res) => res.json(await replaceOrderItems(req.params.id, req.sid, req.member.id, req.body.items)));
 app.get('/api/orders', requireMember, async (req, res) => res.json(await listOrders(req.sid, req.member.id)));
+app.get('/api/orders/:id/receipt', requireMember, async (req,res)=>{
+ res.set('Cache-Control','private, no-store');
+ const row=await findOrder(req.params.id,req.sid,req.member.id);
+ if(!row)return res.status(404).json({error:'주문을 찾을 수 없습니다.'});
+ const order=unpack(row);
+ if(order.mode!=='payment')return res.status(400).json({error:'시연 주문은 결제 영수증이 없습니다.'});
+ try{res.json({url:await paymentReceipt(order,process.env.TOSS_SECRET_KEY)});}
+ catch{res.status(502).json({error:'결제 영수증을 불러오지 못했습니다. 결제 완료 여부를 확인하고 잠시 후 다시 시도해 주세요.'});}
+});
 app.post('/api/payments/confirm', requireMember, async (req, res) => {
   const {orderId, paymentKey, amount} = req.body, row = await findOrder(orderId, req.sid, req.member.id);
   if (!row || !enabled) throw clientError('결제 주문을 확인할 수 없습니다.');
