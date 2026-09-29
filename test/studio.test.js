@@ -44,6 +44,14 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   response=await request('/api/designs',{cookie:authCookie});assert.equal((await response.json()).length,1);
   assert.equal((await request('/api/designs/'+savedDesign.id,{method:'PATCH',cookie:authCookie,body:{...savedDesign,option:'invalid'}})).status,400);
   const item={productId:'mug',option:'화이트 · 330ml',quantity:2,assetId:asset.id,transform:{x:.1,y:0,scale:.8,rotation:25},unitPrice:1};
+  assert.equal((await request('/api/cart',{cookie:anonCookie})).status,401);
+  assert.equal((await request('/api/admin/carts',{cookie:authCookie})).status,403);
+  response=await request('/api/cart',{cookie:authCookie});assert.deepEqual(await response.json(),{items:[],version:null,updatedAt:null});
+  response=await request('/api/cart',{method:'PUT',cookie:authCookie,body:{items:[item],version:null}});assert.equal(response.status,200);let cloudCart=await response.json();assert.equal(cloudCart.items[0].unitPrice,15000);assert.equal(cloudCart.items[0].quantity,2);
+  response=await request('/api/cart',{method:'PUT',cookie:authCookie,body:{items:[],version:null}});assert.equal(response.status,409);
+  response=await request('/api/cart',{method:'PUT',cookie:authCookie,body:{items:[{...item,quantity:0}],version:cloudCart.version}});assert.equal(response.status,400);
+  response=await request('/api/cart',{method:'PUT',cookie:authCookie,body:{items:[{...item,quantity:10}],version:cloudCart.version}});assert.equal(response.status,200);const oldCartVersion=cloudCart.version;cloudCart=await response.json();
+  response=await request('/api/cart',{method:'PUT',cookie:authCookie,body:{items:[],version:oldCartVersion}});assert.equal(response.status,409);
   response=await request('/api/orders',{method:'POST',cookie:authCookie,body:{items:[item],recipient:{name:'테스트',phone:'01000000000',address:'테스트용 주소'},consent:true,mode:'demo'}});assert.equal(response.status,200);let order=await response.json();assert.equal(order.amount,33000);assert.equal(order.recipient.phone,'010-0000-0000');
   response=await request('/api/orders/'+order.id+'/items',{method:'PATCH',cookie:authCookie,body:{items:[{...item,quantity:3}]}});assert.equal(response.status,200);order=await response.json();assert.equal(order.amount,48000);assert.equal(order.items[0].quantity,3);
   response=await request('/api/orders',{cookie:authCookie});assert.equal(response.status,200);assert.equal((await response.json()).length,1);assert.equal((await request('/api/orders',{cookie:anonCookie})).status,401);
@@ -51,6 +59,9 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   assert.equal((await request('/api/admin/catalog-media',{method:'POST',cookie:authCookie,body:{data:'data:image/png;base64,'+image.toString('base64')}})).status,403);
   assert.equal((await request('/api/admin/orders',{headers:{'X-Admin-Token':'test-admin-only'}})).status,403);
   response=await request('/api/admin/bootstrap',{method:'POST',cookie:authCookie,headers:{'X-Admin-Token':'test-admin-only'},body:{}});assert.equal(response.status,200);assert.equal((await response.json()).member.role,'admin');
+  response=await request('/api/admin/carts',{cookie:authCookie});assert.equal(response.status,200);const adminCarts=await response.json();assert.equal(adminCarts.length,1);assert.equal(adminCarts[0].member.email,'member@example.com');assert.equal(adminCarts[0].items[0].quantity,10);assert.equal(adminCarts[0].subtotal,150000);
+  const cartAssetUrl='/api/admin/carts/'+signed.member.id+'/assets/'+asset.id;
+  assert.equal((await request(cartAssetUrl,{cookie:authCookie})).status,200);
   response=await request('/api/admin/orders',{cookie:authCookie});assert.equal(response.status,200);assert.equal((await response.json()).length,1);
   response=await request('/api/admin/members',{cookie:authCookie});assert.equal(response.status,200);assert.equal((await response.json())[0].orderCount,1);
   const testCategoryId=`test-category-${Date.now()}`;
@@ -96,6 +107,10 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   assert.equal((await request('/api/assets/'+asset.id,{cookie:otherAuthCookie})).status,404);
   assert.equal((await request('/api/assets/'+asset.id+'/info',{cookie:otherAuthCookie})).status,404);
   assert.equal((await request('/api/designs/'+savedDesign.id,{method:'PATCH',cookie:otherAuthCookie,body:savedDesign})).status,404);
+  assert.equal((await request('/api/admin/carts',{cookie:otherAuthCookie})).status,403);
+  assert.equal((await request(cartAssetUrl,{cookie:otherAuthCookie})).status,403);
+  response=await request('/api/cart',{cookie:otherAuthCookie});assert.equal((await response.json()).items.length,0);
+  assert.equal((await request('/api/cart',{method:'PUT',cookie:otherAuthCookie,body:{items:[item],version:null}})).status,404);
   response=await request('/api/designs',{cookie:otherAuthCookie});assert.equal(response.status,200);assert.deepEqual(await response.json(),[]);
   response=await request('/api/designs',{method:'POST',cookie:otherAuthCookie,body:{productId:'mug',option:'화이트 · 330ml',assetId:asset.id,transform:{x:0,y:0,scale:.8,rotation:0}}});assert.equal(response.status,404);
   response=await request('/api/orders',{method:'POST',cookie:otherAuthCookie,body:{items:[item],recipient:{name:'다른 회원',phone:'01011112222',address:'테스트용 주소'},consent:true,mode:'demo'}});assert.equal(response.status,400);
@@ -103,5 +118,10 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   response=await request('/api/auth/login',{method:'POST',headers:{Origin:'https://www.artell.co.kr'},body:{email:'member@example.com',password:'safe-password-123'}});assert.equal(response.status,200);
   const renewedMemberCookie=cookieFrom(response,'goodsflap_member');
   assert.equal((await request('/api/assets/'+asset.id,{cookie:renewedMemberCookie})).status,200);
+  response=await request('/api/cart',{cookie:renewedMemberCookie});cloudCart=await response.json();assert.equal(cloudCart.items[0].quantity,10);
+  response=await request('/api/cart',{method:'PUT',cookie:renewedMemberCookie,body:{items:[],version:cloudCart.version}});assert.equal(response.status,200);
+  response=await request('/api/admin/carts',{cookie:renewedMemberCookie});assert.deepEqual(await response.json(),[]);
+  assert.equal((await request(cartAssetUrl,{cookie:renewedMemberCookie})).status,404);
+
  }finally{child.kill();}
 });

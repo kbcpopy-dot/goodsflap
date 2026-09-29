@@ -95,6 +95,10 @@ if (!useSupabase) {
       id TEXT PRIMARY KEY, body TEXT NOT NULL, visible INTEGER NOT NULL DEFAULT 1,
       sortOrder INTEGER NOT NULL DEFAULT 0, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS member_carts(
+      memberId TEXT PRIMARY KEY REFERENCES members(id) ON DELETE CASCADE,
+      items TEXT NOT NULL, version TEXT NOT NULL, updatedAt TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS saved_designs(
       id TEXT PRIMARY KEY, memberId TEXT NOT NULL, assetId TEXT NOT NULL, body TEXT NOT NULL,
       createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL,
@@ -243,6 +247,36 @@ async function claimOrders(memberId, sid) {
 async function claimAssets(memberId, sid) {
   if (!useSupabase) { db.prepare('UPDATE assets SET memberId=? WHERE memberId IS NULL AND session=?').run(memberId, sid); return; }
   databaseError((await supabase.from('assets').update({member_id: memberId}).is('member_id', null).eq('session_hash', sid)).error);
+}
+
+const unpackCart = row => row ? {memberId:row.memberId||row.member_id,items:typeof row.items==='string'?JSON.parse(row.items):row.items,version:row.version,updatedAt:row.updatedAt||row.updated_at} : {items:[],version:null,updatedAt:null};
+async function readMemberCart(memberId){
+ if(!useSupabase)return unpackCart(db.prepare('SELECT * FROM member_carts WHERE memberId=?').get(memberId));
+ const {data,error}=await supabase.from('member_carts').select('*').eq('member_id',memberId).maybeSingle();databaseError(error);return unpackCart(data);
+}
+async function writeMemberCart(memberId,sid,input){
+ if(!Array.isArray(input?.items)||input.items.length>20||!Object.hasOwn(input,'version')||(input.version!==null&&!/^[a-f0-9-]{36}$/i.test(input.version)))throw clientError('장바구니 정보를 확인해 주세요.');
+ const catalog=await listCatalogProducts(true),items=[];
+ for(const item of input.items){
+  if(!item||typeof item.assetId!=='string'||!await findAsset(item.assetId,sid,memberId))throw clientError('장바구니 이미지의 소유자를 확인할 수 없습니다.',404);
+  try{items.push(validateItem({productId:item.productId,option:item.option,quantity:item.quantity,assetId:item.assetId,transform:item.transform},catalog));}catch{throw clientError('장바구니 상품 옵션, 수량 또는 배치를 확인해 주세요.');}
+ }
+ const row={items,version:randomUUID(),updatedAt:isoNow()},conflict=()=>clientError('다른 기기에서 장바구니가 변경되었습니다. 사용할 내용을 선택해 주세요.',409);
+ if(!useSupabase){
+  if(input.version===null){try{db.prepare('INSERT INTO member_carts(memberId,items,version,updatedAt) VALUES(?,?,?,?)').run(memberId,JSON.stringify(items),row.version,row.updatedAt);}catch(error){if(db.prepare('SELECT 1 FROM member_carts WHERE memberId=?').get(memberId))throw conflict();throw error;}}
+  else if(!db.prepare('UPDATE member_carts SET items=?,version=?,updatedAt=? WHERE memberId=? AND version=?').run(JSON.stringify(items),row.version,row.updatedAt,memberId,input.version).changes)throw conflict();
+ }else{
+  const values={items,version:row.version,updated_at:row.updatedAt};
+  if(input.version===null){const {error}=await supabase.from('member_carts').insert({member_id:memberId,...values});if(error?.code==='23505')throw conflict();databaseError(error);}
+  else {const {data,error}=await supabase.from('member_carts').update(values).eq('member_id',memberId).eq('version',input.version).select('version');databaseError(error);if(!data.length)throw conflict();}
+ }
+ return row;
+}
+async function listMemberCarts(){
+ let rows;if(!useSupabase)rows=db.prepare('SELECT * FROM member_carts ORDER BY updatedAt DESC').all();
+ else {const result=await supabase.from('member_carts').select('*').order('updated_at',{ascending:false});databaseError(result.error);rows=result.data;}
+ const members=await listMembers(),byId=new Map(members.map(m=>[m.id,m]));
+ return rows.map(unpackCart).filter(row=>row.items.length).map(row=>({...row,member:byId.get(row.memberId)||{name:'탈퇴 회원',email:''},subtotal:row.items.reduce((sum,item)=>sum+item.unitPrice*item.quantity,0)}));
 }
 
 const unpackSavedDesign = row => ({id: row.id, ...(typeof row.body === 'string' ? JSON.parse(row.body) : row.body), memberId: row.memberId || row.member_id, createdAt: row.createdAt || row.created_at, updatedAt: row.updatedAt || row.updated_at});
@@ -698,6 +732,16 @@ app.get('/api/assets/:id/info', requireMember, async (req, res) => {
   res.json({id:asset.id,width:asset.width,height:asset.height,url:'/api/assets/'+encodeURIComponent(asset.id)});
 });
 app.patch('/api/designs/:id', requireMember, async (req, res) => res.json({design:await saveMemberDesign(req.member.id, req.sid, req.body, req.params.id)}));
+app.get('/api/cart',requireMember,async(req,res)=>res.json(await readMemberCart(req.member.id)));
+app.put('/api/cart',requireMember,async(req,res)=>res.json(await writeMemberCart(req.member.id,req.sid,req.body)));
+app.get('/api/admin/carts',requireAdmin,async(req,res)=>res.json(await listMemberCarts()));
+app.get('/api/admin/carts/:memberId/assets/:assetId',requireAdmin,async(req,res)=>{
+ const cart=await readMemberCart(req.params.memberId);
+ if(!cart.items.some(item=>item.assetId===req.params.assetId))return res.sendStatus(404);
+ const asset=await findAnyAsset(req.params.assetId);
+ if(!asset||(asset.memberId||asset.member_id)!==req.params.memberId)return res.sendStatus(404);
+ res.type(asset.normalized_path?.endsWith('.webp')?'webp':'png').send(await readAsset(asset,'normalized'));
+});
 app.post('/api/designs', requireMember, async (req, res) => res.status(201).json({design: await saveMemberDesign(req.member.id, req.sid, req.body)}));
 app.get('/api/designs', requireMember, async (req, res) => res.json(await listSavedDesigns(req.member.id)));
 app.get('/api/catalog-media/:id', async (req, res) => {
