@@ -210,3 +210,5 @@ input[type=email],textarea{font-family:inherit}input[type=email]{width:100%;padd
 .apparel-options{border:0;padding:0;margin:20px 0}.apparel-options legend{margin-bottom:0}.apparel-options .field{margin-top:12px}.apparel-options select{min-height:44px}
 
 .design-edit-link{color:inherit;text-decoration:none;display:block}.design-edit-link:hover{opacity:.85}.design-edit-link:focus-visible{outline:3px solid #7956d8;outline-offset:3px;border-radius:8px}
+
+.finished-preview-dialog{width:min(620px,calc(100vw - 32px));max-height:90dvh;overflow:auto;padding:20px;box-sizing:border-box}.finished-preview-dialog canvas{display:block;width:100%;height:auto;border-radius:16px;margin:14px 0}.preview-tabs{display:flex;gap:8px;flex-wrap:wrap}.preview-tabs [aria-pressed="true"]{background:var(--ink);color:white}.finished-preview-dialog [data-close]{width:100%}
