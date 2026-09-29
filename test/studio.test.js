@@ -39,6 +39,10 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   assert.equal((await request('/api/assets/'+asset.id,{cookie:anonCookie})).status,401);assert.equal((await request('/api/assets/'+asset.id,{cookie:authCookie})).status,200);
   response=await request('/api/designs',{method:'POST',cookie:authCookie,body:{productId:'mug',option:'화이트 · 330ml',assetId:asset.id,transform:{x:.1,y:0,scale:.8,rotation:25}}});assert.equal(response.status,201);const savedDesign=(await response.json()).design;assert.equal(savedDesign.assetId,asset.id);assert.equal(savedDesign.name,'AI Creator 머그컵');
   response=await request('/api/designs',{cookie:authCookie});assert.equal(response.status,200);assert.equal((await response.json()).length,1);assert.equal((await request('/api/designs',{cookie:anonCookie})).status,401);
+  response=await request('/api/assets/'+asset.id+'/info',{cookie:authCookie});assert.equal(response.status,200);assert.equal((await response.json()).width,600);
+  response=await request('/api/designs/'+savedDesign.id,{method:'PATCH',cookie:authCookie,body:{...savedDesign,transform:{x:-.2,y:.15,scale:1.1,rotation:-30}}});assert.equal(response.status,200);const editedDesign=(await response.json()).design;assert.equal(editedDesign.id,savedDesign.id);assert.equal(editedDesign.createdAt,savedDesign.createdAt);assert.equal(editedDesign.transform.rotation,-30);
+  response=await request('/api/designs',{cookie:authCookie});assert.equal((await response.json()).length,1);
+  assert.equal((await request('/api/designs/'+savedDesign.id,{method:'PATCH',cookie:authCookie,body:{...savedDesign,option:'invalid'}})).status,400);
   const item={productId:'mug',option:'화이트 · 330ml',quantity:2,assetId:asset.id,transform:{x:.1,y:0,scale:.8,rotation:25},unitPrice:1};
   response=await request('/api/orders',{method:'POST',cookie:authCookie,body:{items:[item],recipient:{name:'테스트',phone:'01000000000',address:'테스트용 주소'},consent:true,mode:'demo'}});assert.equal(response.status,200);let order=await response.json();assert.equal(order.amount,33000);assert.equal(order.recipient.phone,'010-0000-0000');
   response=await request('/api/orders/'+order.id+'/items',{method:'PATCH',cookie:authCookie,body:{items:[{...item,quantity:3}]}});assert.equal(response.status,200);order=await response.json();assert.equal(order.amount,48000);assert.equal(order.items[0].quantity,3);
@@ -90,6 +94,8 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   const otherMemberCookie=cookieFrom(response,'goodsflap_member'),otherAuthCookie=anonCookie+'; '+otherMemberCookie;
   assert.equal((await request('/api/admin/bootstrap',{method:'POST',cookie:otherAuthCookie,headers:{'X-Admin-Token':'test-admin-only'},body:{}})).status,403);
   assert.equal((await request('/api/assets/'+asset.id,{cookie:otherAuthCookie})).status,404);
+  assert.equal((await request('/api/assets/'+asset.id+'/info',{cookie:otherAuthCookie})).status,404);
+  assert.equal((await request('/api/designs/'+savedDesign.id,{method:'PATCH',cookie:otherAuthCookie,body:savedDesign})).status,404);
   response=await request('/api/designs',{cookie:otherAuthCookie});assert.equal(response.status,200);assert.deepEqual(await response.json(),[]);
   response=await request('/api/designs',{method:'POST',cookie:otherAuthCookie,body:{productId:'mug',option:'화이트 · 330ml',assetId:asset.id,transform:{x:0,y:0,scale:.8,rotation:0}}});assert.equal(response.status,404);
   response=await request('/api/orders',{method:'POST',cookie:otherAuthCookie,body:{items:[item],recipient:{name:'다른 회원',phone:'01011112222',address:'테스트용 주소'},consent:true,mode:'demo'}});assert.equal(response.status,400);

@@ -254,7 +254,9 @@ async function listSavedDesigns(memberId) {
   if (!useSupabase) return db.prepare('SELECT * FROM saved_designs WHERE memberId=? ORDER BY updatedAt DESC').all(memberId).map(unpackSavedDesign);
   const {data: rows, error} = await supabase.from('saved_designs').select('*').eq('member_id', memberId).order('updated_at', {ascending: false}); databaseError(error); return rows.map(unpackSavedDesign);
 }
-async function saveMemberDesign(memberId, sid, input) {
+async function saveMemberDesign(memberId, sid, input, designId = null) {
+  const existing = designId ? (await listSavedDesigns(memberId)).find(row => row.id === designId) : null;
+  if (designId && !existing) throw clientError('저장한 작품을 찾을 수 없습니다.', 404);
   if (!input || typeof input !== 'object') throw clientError('저장할 디자인을 확인해 주세요.');
   const productId = typeof input.productId === 'string' ? input.productId.trim() : '';
   const option = typeof input.option === 'string' ? input.option.trim() : '';
@@ -265,7 +267,11 @@ async function saveMemberDesign(memberId, sid, input) {
   try { item = validateItem({productId, option, quantity: 1, assetId, transform: input.transform}, catalog); }
   catch { throw clientError('상품 옵션 또는 디자인 배치를 확인해 주세요.'); }
   const now = isoNow(), body = {productId: item.productId, option: item.option, assetId: item.assetId, transform: item.transform, name: item.name, mm: item.mm, schemaVersion: item.schemaVersion};
-  const row = {id: randomUUID(), memberId, assetId, body, createdAt: now, updatedAt: now}; await insertSavedDesign(row); return unpackSavedDesign(row);
+  const row = {id: existing?.id || randomUUID(), memberId, assetId, body, createdAt: existing?.createdAt || now, updatedAt: now};
+  if (!existing) await insertSavedDesign(row);
+  else if (!useSupabase) db.prepare('UPDATE saved_designs SET assetId=?,body=?,updatedAt=? WHERE id=? AND memberId=?').run(assetId, JSON.stringify(body), now, row.id, memberId);
+  else databaseError((await supabase.from('saved_designs').update({asset_id:assetId,body,updated_at:now}).eq('id',row.id).eq('member_id',memberId)).error);
+  return unpackSavedDesign(row);
 }
 async function hashPassword(password) {
   const salt = randomBytes(16).toString('hex');
@@ -687,6 +693,11 @@ app.post('/api/assets', requireMember, async (req, res) => {
 app.get('/api/assets/:id', requireMember, async (req, res) => {
   const asset = await findAsset(req.params.id, req.sid, req.member.id); if (!asset) return res.sendStatus(404); res.type(asset.normalized_path?.endsWith('.webp') ? 'webp' : 'png').send(await readAsset(asset, 'normalized'));
 });
+app.get('/api/assets/:id/info', requireMember, async (req, res) => {
+  const asset = await findAsset(req.params.id, req.sid, req.member.id); if (!asset) return res.sendStatus(404);
+  res.json({id:asset.id,width:asset.width,height:asset.height,url:'/api/assets/'+encodeURIComponent(asset.id)});
+});
+app.patch('/api/designs/:id', requireMember, async (req, res) => res.json({design:await saveMemberDesign(req.member.id, req.sid, req.body, req.params.id)}));
 app.post('/api/designs', requireMember, async (req, res) => res.status(201).json({design: await saveMemberDesign(req.member.id, req.sid, req.body)}));
 app.get('/api/designs', requireMember, async (req, res) => res.json(await listSavedDesigns(req.member.id)));
 app.get('/api/catalog-media/:id', async (req, res) => {
