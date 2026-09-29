@@ -1,3 +1,4 @@
+import {createOrderMailer} from './order-email.js';
 import express from 'express';
 import {apparelOptions} from './public/product-options.js';
 import {DatabaseSync} from 'node:sqlite';
@@ -80,6 +81,11 @@ if (!useSupabase) {
     PRAGMA foreign_keys=ON;
     CREATE TABLE IF NOT EXISTS assets(id TEXT PRIMARY KEY, session TEXT, format TEXT, width INTEGER, height INTEGER);
     CREATE TABLE IF NOT EXISTS orders(id TEXT PRIMARY KEY, session TEXT, body TEXT, status TEXT, paymentKey TEXT, createdAt TEXT);
+    CREATE TABLE IF NOT EXISTS order_email_notifications(
+      order_id TEXT PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
+      payload TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending',claim_token TEXT,
+      first_attempt_at TEXT,last_attempt_at TEXT,provider_id TEXT,sent_at TEXT,error TEXT
+    );
     CREATE TABLE IF NOT EXISTS members(
       id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE COLLATE NOCASE,
       phone TEXT, passwordHash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'customer' CHECK(role IN ('customer','admin')),
@@ -176,6 +182,7 @@ async function readCatalogMediaVariant(id, variant) {
   if (error?.statusCode === 404 || error?.statusCode === '404') return null;
   storageError(error); return Buffer.from(await file.arrayBuffer());
 }
+const orderMailer=createOrderMailer({db,supabase});
 async function insertOrder(row) {
   if (!useSupabase) { db.prepare('INSERT INTO orders(id,session,memberId,body,status,paymentKey,createdAt) VALUES(?,?,?,?,?,?,?)').run(row.id, row.session, row.memberId || null, JSON.stringify(row.body), row.status, null, row.createdAt); return; }
   databaseError((await supabase.from('orders').insert({id: row.id, session_hash: row.session, member_id: row.memberId || null, body: row.body, status: row.status, created_at: row.createdAt})).error);
@@ -767,7 +774,7 @@ app.post('/api/orders', requireMember, async (req, res) => {
   for (const item of items) { if (!await findAsset(item.assetId, req.sid, req.member.id)) throw clientError('이미지를 다시 업로드해 주세요.'); clean.push(validateItem({productId: item.productId, option: item.option, quantity: item.quantity, assetId: item.assetId, transform: item.transform}, catalog)); }
   const id = 'AT' + randomBytes(12).toString('hex'), body = {items: clean, recipient: {name: recipient.name.trim(), phone: normalizePhone(recipient.phone), address: recipient.address.trim()}, ...totals(clean), mode};
   const status = mode === 'demo' ? 'demo' : 'pending', createdAt = isoNow();
-  await insertOrder({id, session: req.sid, memberId: req.member.id, body, status, createdAt}); res.json({id, ...body});
+  await insertOrder({id, session: req.sid, memberId: req.member.id, body, status, createdAt}); await orderMailer.safeSend({id,...body,status,createdAt}); res.json({id, ...body});
 });
 app.post('/api/orders/:id/payment', requireMember, async (req, res) => {
   if (!enabled) throw clientError('토스페이먼츠 결제 설정을 확인해 주세요.', 503);
@@ -868,6 +875,12 @@ app.patch('/api/admin/products/:id', requireAdmin, async (req, res) => {
 app.delete('/api/admin/products/:id', requireAdmin, async (req, res) => {
   const current = (await listCatalogProducts(true)).find(product => product.id === req.params.id); if (!current) return res.sendStatus(404);
   await removeCatalogProduct(current); res.json({ok:true});
+});
+app.get('/api/admin/order-emails',requireAdmin,async(req,res)=>res.json({configured:orderMailer.configured,recipients:orderMailer.recipients,notifications:await orderMailer.list()}));
+app.post('/api/admin/orders/:id/email',requireAdmin,async(req,res)=>{
+ if(!orderMailer.configured)return res.status(503).json({error:'메일 발송 서비스 연결이 필요합니다.'});
+ const row=await findAnyOrder(req.params.id);if(!row)return res.sendStatus(404);
+ res.json(await orderMailer.safeSend(unpack(row)));
 });
 app.get('/api/admin/orders', requireAdmin, async (_, res) => res.json(await listOrders('', '', true)));
 app.patch('/api/admin/orders/:id', requireAdmin, async (req, res) => {

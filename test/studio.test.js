@@ -16,7 +16,7 @@ test('서버가 상품 가격을 확정하고 잘못된 옵션과 변환을 거�
 });
 
 test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주문·상품을 관리한다',async()=>{
- const child=spawn(process.execPath,['server.js'],{cwd:new URL('..',import.meta.url),env:{...process.env,DATA_DIR:mkdtempSync(join(tmpdir(),'goodsflap-member-test-')),PORT:'3017',PUBLIC_URL:'https://artell.co.kr',ADMIN_TOKEN:'test-admin-only',TOSS_CLIENT_KEY:'',TOSS_SECRET_KEY:''},stdio:['ignore','pipe','pipe']});
+ const child=spawn(process.execPath,['server.js'],{cwd:new URL('..',import.meta.url),env:{...process.env,DATA_DIR:mkdtempSync(join(tmpdir(),'goodsflap-member-test-')),PORT:'3017',PUBLIC_URL:'https://artell.co.kr',ADMIN_TOKEN:'test-admin-only',RESEND_API_KEY:'',ORDER_EMAIL_FROM:'',TOSS_CLIENT_KEY:'',TOSS_SECRET_KEY:''},stdio:['ignore','pipe','pipe']});
  try{
   await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('서버 시작 시간 초과')),15000);child.stdout.on('data',chunk=>{if(chunk.toString().includes('굿즈플랩 스튜디오:')){clearTimeout(timer);resolve();}});child.on('error',reject);});
   const base='http://localhost:3017';
@@ -61,6 +61,8 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   assert.equal((await request('/api/admin/orders',{headers:{'X-Admin-Token':'test-admin-only'}})).status,403);
   response=await request('/api/admin/bootstrap',{method:'POST',cookie:authCookie,headers:{'X-Admin-Token':'test-admin-only'},body:{}});assert.equal(response.status,200);assert.equal((await response.json()).member.role,'admin');
   response=await request('/api/admin/carts',{cookie:authCookie});assert.equal(response.status,200);const adminCarts=await response.json();assert.equal(adminCarts.length,1);assert.equal(adminCarts[0].member.email,'member@example.com');assert.equal(adminCarts[0].items[0].quantity,10);assert.equal(adminCarts[0].subtotal,150000);
+  response=await request('/api/admin/order-emails',{cookie:authCookie});assert.equal(response.status,200);const mailStatus=await response.json();assert.equal(mailStatus.configured,false);assert.ok(mailStatus.notifications.some(n=>n.order_id===order.id&&n.state==='pending'));
+  assert.equal((await request('/api/admin/orders/'+order.id+'/email',{method:'POST',cookie:authCookie,body:{}})).status,503);
   const uploadBase='/api/admin/members/'+signed.member.id+'/uploads';
   response=await request(uploadBase,{cookie:authCookie});assert.equal(response.status,200);const uploads=await response.json();assert.ok(uploads.items.some(file=>file.id===asset.id));assert.equal(uploads.nextOffset,null);assert.equal(uploads.member.email,'member@example.com');
   assert.equal((await request(uploadBase+'/'+asset.id+'/preview',{cookie:authCookie})).status,200);
@@ -116,6 +118,8 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   assert.equal((await request(uploadBase,{cookie:otherAuthCookie})).status,403);
   assert.equal((await request(uploadBase+'/'+asset.id+'/original',{cookie:otherAuthCookie})).status,403);
   assert.equal((await request(uploadBase+'/'+asset.id+'/preview',{cookie:anonCookie})).status,403);
+  assert.equal((await request('/api/admin/order-emails',{cookie:otherAuthCookie})).status,403);
+  assert.equal((await request('/api/admin/orders/'+order.id+'/email',{method:'POST',cookie:otherAuthCookie,body:{}})).status,403);
   assert.equal((await request('/api/admin/carts',{cookie:otherAuthCookie})).status,403);
   assert.equal((await request(cartAssetUrl,{cookie:otherAuthCookie})).status,403);
   response=await request('/api/cart',{cookie:otherAuthCookie});assert.equal((await response.json()).items.length,0);
