@@ -1,4 +1,4 @@
-import {supportsFinishedPreview,drawFinishedPreview} from './finished-preview.js';
+import {supportsFinishedPreview,drawFinishedPreview,isAllRoundMug} from './finished-preview.js';
 
 import {optionPrice,optionMockup} from './product-options.js';
 const $=s=>document.querySelector(s),app=$('#app');
@@ -126,12 +126,15 @@ function renderStudio(id,resume=null){const p=products.find(p=>p.id===id);if(!p)
  canvas.onpointerdown=e=>{if(!editor.img||(e.pointerType==='touch'&&!touchMove))return;const a=area(p);drag={x:e.clientX,y:e.clientY,tx:editor.t.x,ty:editor.t.y,a};canvas.setPointerCapture(e.pointerId);};canvas.onpointermove=e=>{if(!drag)return;const factor=500/canvas.getBoundingClientRect().width;editor.t.x=Math.max(-.5,Math.min(.5,drag.tx+(e.clientX-drag.x)*factor/drag.a.w));editor.t.y=Math.max(-.5,Math.min(.5,drag.ty+(e.clientY-drag.y)*factor/drag.a.h));refresh();};canvas.onpointerup=canvas.onpointercancel=()=>drag=null;
  $('#quantity').oninput=e=>$('#price').textContent=money(optionPrice(p,$('#option').value)*(Number(e.target.value)||0));$('#preview').textContent=supportsFinishedPreview(p)?'완성품 미리보기':'미리보기';$('#preview').onclick=()=>{
  if(!editor.img)return toast('먼저 작품 또는 사진을 올려 주세요.');
- const finished=supportsFinishedPreview(p),dialog=document.createElement('dialog');dialog.className='finished-preview-dialog';
+ const finished=supportsFinishedPreview(p),wrap=isAllRoundMug(p),dialog=document.createElement('dialog');dialog.className='finished-preview-dialog';
  dialog.innerHTML=`<h3>${finished?'완성품 미리보기':'내 작품 미리보기'}</h3>${finished?'<div class="preview-tabs" role="group" aria-label="미리보기 방식"><button class="secondary" data-view="finished" aria-pressed="true">인쇄된 모습</button><button class="secondary" data-view="layout" aria-pressed="false">인쇄 배치 확인</button></div>':''}<canvas aria-label="${esc(p.name)} 인쇄 미리보기"></canvas><p class="hint">${finished?'현재 배치를 제품 형태에 입힌 예상 이미지입니다. 실제 제품의 색상·재질·인쇄 위치는 차이가 있을 수 있습니다.':'프린트 영역 밖 이미지는 잘립니다. 원본 해상도와 배치를 확인해 주세요.'}</p><button class="primary" data-close>계속 편집하기</button>`;
- document.body.append(dialog);const preview=dialog.querySelector('canvas');
+ document.body.append(dialog);const preview=dialog.querySelector('canvas');let angle=0;
+ if(wrap){const controls=document.createElement('div');controls.className='wrap-preview-controls';controls.innerHTML='<label for="mug-view-angle">컵 돌려 보기 <output>0°</output></label><input id="mug-view-angle" type="range" min="0" max="360" value="0" step="1"><p class="hint">슬라이더를 움직여 컵 둘레를 확인하세요. 배치의 빈 공간과 손잡이 쪽 여백은 인쇄되지 않습니다.</p>';preview.after(controls);controls.querySelector('input').oninput=e=>{angle=Number(e.target.value);controls.querySelector('output').textContent=angle+'°';show('finished');};}
+
  const show=view=>{if(view==='finished'){
-  const layer=document.createElement('canvas');draw(layer,{...p,studioImage:'print-layer'},editor.img,editor.t,false,false,null);const a=area(p),texture=document.createElement('canvas');texture.width=Math.max(1,Math.round(a.w*2));texture.height=Math.max(1,Math.round(a.h*2));texture.getContext('2d').drawImage(layer,a.x,a.y,a.w,a.h,0,0,texture.width,texture.height);drawFinishedPreview(preview,p,texture);
+  const layer=document.createElement('canvas');draw(layer,{...p,studioImage:'print-layer'},editor.img,editor.t,false,false,null);const a=area(p),texture=document.createElement('canvas');texture.width=Math.max(1,Math.round(a.w*2));texture.height=Math.max(1,Math.round(a.h*2));texture.getContext('2d').drawImage(layer,a.x,a.y,a.w,a.h,0,0,texture.width,texture.height);drawFinishedPreview(preview,p,texture,angle);
  }else draw(preview,p,editor.img,editor.t,false,false,editor.mockup);
+ const controls=dialog.querySelector('.wrap-preview-controls');if(controls)controls.hidden=view!=='finished';
  dialog.querySelectorAll('[data-view]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.view===view)));};
  show(finished?'finished':'layout');dialog.querySelectorAll('[data-view]').forEach(button=>button.onclick=()=>show(button.dataset.view));dialog.querySelector('[data-close]').onclick=()=>dialog.close();dialog.onclose=()=>dialog.remove();dialog.showModal();
  };
