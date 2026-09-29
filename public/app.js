@@ -73,7 +73,7 @@ function persistCartSync(){if(cartSyncMeta)localStorage.setItem('artell-cart-syn
 function writeLocalCart(){localStorage.setItem('artell-cart',JSON.stringify(cart));localStorage.setItem('artell-cart-owner',member.id);updateCartCount();}
 function cartSyncStatus(){
  const box=$('#cart-sync-status');if(!box)return;
- const message=cartSyncNotice||(cartSyncMeta?.pending?'장바구니를 계정에 저장하고 있습니다…':'장바구니가 계정에 저장되었습니다. 주문 접수 전이며, 관리자가 내용을 확인할 수 있습니다.');
+ const message=cartSyncNotice||(cartSyncMeta?.pending?'장바구니를 계정에 저장하고 있습니다…':!cartSyncMeta?.version?'계정에 동기화된 장바구니가 아직 없습니다. 이전에 담은 상품은 원래 사용한 기기·브라우저에서 로그인 후 새로고침해 주세요.':cart.length?'장바구니가 계정에 저장되었습니다. 주문 접수 전이며, 관리자가 내용을 확인할 수 있습니다.':'계정에 저장된 장바구니가 비어 있습니다.');
  box.innerHTML=`<p role="status">${esc(message)}</p>${cartSyncConflict?'<div class="actions"><button class="secondary" data-cart-cloud>다른 기기의 내용 불러오기</button><button class="secondary" data-cart-local>이 기기의 내용 반영하기</button></div>':cartSyncNotice?'<button class="secondary" data-cart-retry>저장 다시 시도</button>':''}`;
  box.querySelector('[data-cart-retry]')?.addEventListener('click',()=>cartSyncReady?flushCart():restoreAccountCart());
  box.querySelector('[data-cart-cloud]')?.addEventListener('click',()=>resolveCartConflict(false));
