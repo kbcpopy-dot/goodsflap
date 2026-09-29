@@ -1,3 +1,4 @@
+import {remainingCartItems} from './paid-cart.js';
 import {paymentReceipt} from './payment-receipt.js';
 import {createOrderMailer} from './order-email.js';
 import express from 'express';
@@ -261,6 +262,13 @@ const unpackCart = row => row ? {memberId:row.memberId||row.member_id,items:type
 async function readMemberCart(memberId){
  if(!useSupabase)return unpackCart(db.prepare('SELECT * FROM member_carts WHERE memberId=?').get(memberId));
  const {data,error}=await supabase.from('member_carts').select('*').eq('member_id',memberId).maybeSingle();databaseError(error);return unpackCart(data);
+}
+async function reconcilePaidCart(memberId,sid){
+ const current=await readMemberCart(memberId);
+ if(!current.items.length||!current.updatedAt)return current;
+ const items=remainingCartItems(current,await listOrders(sid,memberId));
+ if(items.length===current.items.length)return current;
+ try{return await writeMemberCart(memberId,sid,{items,version:current.version});}catch(error){if(error.status===409)return readMemberCart(memberId);throw error;}
 }
 async function writeMemberCart(memberId,sid,input){
  if(!Array.isArray(input?.items)||input.items.length>20||!Object.hasOwn(input,'version')||(input.version!==null&&!/^[a-f0-9-]{36}$/i.test(input.version)))throw clientError('장바구니 정보를 확인해 주세요.');
@@ -740,7 +748,7 @@ app.get('/api/assets/:id/info', requireMember, async (req, res) => {
   res.json({id:asset.id,width:asset.width,height:asset.height,url:'/api/assets/'+encodeURIComponent(asset.id)});
 });
 app.patch('/api/designs/:id', requireMember, async (req, res) => res.json({design:await saveMemberDesign(req.member.id, req.sid, req.body, req.params.id)}));
-app.get('/api/cart',requireMember,async(req,res)=>res.json(await readMemberCart(req.member.id)));
+app.get('/api/cart',requireMember,async(req,res)=>res.json(await reconcilePaidCart(req.member.id,req.sid)));
 app.put('/api/cart',requireMember,async(req,res)=>res.json(await writeMemberCart(req.member.id,req.sid,req.body)));
 app.get('/api/admin/carts',requireAdmin,async(req,res)=>res.json(await listMemberCarts()));
 app.get('/api/admin/carts/:memberId/assets/:assetId',requireAdmin,async(req,res)=>{
@@ -802,7 +810,7 @@ app.post('/api/payments/confirm', requireMember, async (req, res) => {
   const result = await response.json();
   if (!response.ok) return res.status(400).json({error: '결제 승인이 완료되지 않았습니다. 주문 조회에서 확인 후 다시 시도해 주세요.'});
   if (result.status !== 'DONE' || result.orderId !== orderId || result.totalAmount !== order.amount) throw serverError('결제 승인 정보 검증에 실패했습니다.');
-  await updateOrder(orderId, 'paid', paymentKey); res.json({id: orderId, status: 'paid'});
+  await updateOrder(orderId, 'paid', paymentKey); await reconcilePaidCart(req.member.id,req.sid); res.json({id: orderId, status: 'paid'});
 });
 app.post('/api/admin/bootstrap', requireMember, requireLegacyAdmin, async (req, res) => {
   if (await countAdmins() > 0) throw clientError('이미 관리자 계정이 연결되어 있습니다. 관리자 화면에서 권한을 관리해 주세요.', 403);
