@@ -5,6 +5,7 @@ import {mkdtempSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import sharp from 'sharp';
+import {optionPrintSize,optionDesignArea} from '../public/product-options.js';
 import {validateItem, totals} from '../catalog.js';
 
 test('서버가 상품 가격을 확정하고 잘못된 옵션과 변환을 거부한다',()=>{
@@ -132,4 +133,12 @@ test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주�
   assert.equal((await request(cartAssetUrl,{cookie:renewedMemberCookie})).status,404);
 
  }finally{child.kill();}
+});
+
+test('머그컵 옵션에 따라 인쇄 크기와 가이드 영역이 바뀐다',()=>{
+ const mug={id:'mug',price:15000,options:['단면/양면 인쇄','올라운드 인쇄'],mm:[90,80],studioImage:'/api/catalog-media/ea877755-78d3-4f24-b9b5-a8404298ba52',designArea:[107,339,289,92]};
+ const item={productId:'mug',option:'단면/양면 인쇄',quantity:1,transform:{x:0,y:0,scale:1,rotation:0}};
+ assert.deepEqual(validateItem(item,[mug]).mm,[75,75]);assert.deepEqual(validateItem({...item,option:'올라운드 인쇄'},[mug]).mm,[200,75]);
+ assert.deepEqual(optionDesignArea(mug,item.option),[325,143,70,71]);assert.deepEqual(optionDesignArea(mug,'올라운드 인쇄'),mug.designArea);
+ assert.deepEqual(optionPrintSize({...mug,id:'other'},item.option),[90,80]);assert.deepEqual(optionDesignArea({...mug,studioImage:'/other.png'},item.option),mug.designArea);
 });
