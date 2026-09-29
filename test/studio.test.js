@@ -16,7 +16,7 @@ test('서버가 상품 가격을 확정하고 잘못된 옵션과 변환을 거�
 });
 
 test('회원 로그인으로 주문을 연결하고, 관리자 계정에서 주문·상품을 관리한다',async()=>{
- const child=spawn(process.execPath,['server.js'],{cwd:new URL('..',import.meta.url),env:{...process.env,DATA_DIR:mkdtempSync(join(tmpdir(),'goodsflap-member-test-')),PORT:'3017',PUBLIC_URL:'https://artell.co.kr',ADMIN_TOKEN:'test-admin-only',RESEND_API_KEY:'',ORDER_EMAIL_FROM:'',TOSS_CLIENT_KEY:'',TOSS_SECRET_KEY:''},stdio:['ignore','pipe','pipe']});
+ const child=spawn(process.execPath,['server.js'],{cwd:new URL('..',import.meta.url),env:{...process.env,DATA_DIR:mkdtempSync(join(tmpdir(),'goodsflap-member-test-')),PORT:'3017',PUBLIC_URL:'https://artell.co.kr',ADMIN_TOKEN:'test-admin-only',RESEND_API_KEY:'',ORDER_EMAIL_FROM:'',SMTP_USER:'',SMTP_PASS:'',TOSS_CLIENT_KEY:'',TOSS_SECRET_KEY:''},stdio:['ignore','pipe','pipe']});
  try{
   await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('서버 시작 시간 초과')),15000);child.stdout.on('data',chunk=>{if(chunk.toString().includes('굿즈플랩 스튜디오:')){clearTimeout(timer);resolve();}});child.on('error',reject);});
   const base='http://localhost:3017';
